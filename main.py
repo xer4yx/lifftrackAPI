@@ -40,7 +40,22 @@ class FormOutput(BaseModel):
     num_errors: int
 
 
+server_origin = [
+    'http://localhost:8000',
+    'http://localhost:8989'
+]
+
+server_method = ["PUT", "GET", "DELETE"]
+
+server_header = ["*"]
+
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=server_origin,
+    allow_methods=server_method,
+    allow_headers=server_header
+)
 rtdb = RTDBHelper()
 
 latest_frame_lock = threading.Lock()
