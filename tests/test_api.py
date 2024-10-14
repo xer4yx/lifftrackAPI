@@ -25,7 +25,7 @@ def test_get_user():
     time.sleep(3)
     print('Getting user...')
     key = 'johndoe'
-    x = requests.get(f'{domain}/user/get/{key}')
+    x = requests.get(f'{domain}/user/{key}')
     assert x.status_code == 200
     print(x.json())
 
@@ -44,7 +44,7 @@ def test_update_user():
         "password": "nothashed"
     }
 
-    x = requests.put(f'{domain}/user/update/{key}', json=payload_sample)
+    x = requests.put(f'{domain}/user/{key}', json=payload_sample)
     assert x.status_code == 200
 
 
@@ -53,7 +53,7 @@ def test_delete_user():
     time.sleep(3)
     key = "johndoe"
     print('Deleting user...')
-    x = requests.delete(f'{domain}/user/erase_data/{key}')
+    x = requests.delete(f'{domain}/user/{key}')
     assert x.status_code == 200
 
 
