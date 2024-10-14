@@ -40,7 +40,22 @@ class FormOutput(BaseModel):
     num_errors: int
 
 
+server_origin = [
+    'http://localhost:8000',
+    'http://localhost:8989'
+]
+
+server_method = ["PUT", "GET", "DELETE"]
+
+server_header = ["*"]
+
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=server_origin,
+    allow_methods=server_method,
+    allow_headers=server_header
+)
 rtdb = RTDBHelper()
 
 latest_frame_lock = threading.Lock()
@@ -121,7 +136,7 @@ def create_user(user: User):
         raise HTTPException(status_code=400, detail=str(te))
 
 
-@app.get("/user/get/{username}")
+@app.get("/user/{username}")
 async def get_user_data(username: str, data=None):
     """
     Endpoint to get user data from the Firebase Realtime Database.
@@ -133,8 +148,8 @@ async def get_user_data(username: str, data=None):
         raise HTTPException(status_code=404, detail=str(ve))
 
 
-@app.put("/user/update/{username}")
-async def update_user_data(username: str, user: User, column=None):
+@app.put("/user/{username}")
+async def update_user_data(username: str, user: User):
     """
     Endpoint to update user data in the Firebase Realtime Database.
     """
@@ -157,7 +172,7 @@ async def update_user_data(username: str, user: User, column=None):
         raise HTTPException(status_code=404, detail=str(ve))
 
 
-@app.delete("/user/erase_data/{username}")
+@app.delete("/user/{username}")
 def delete_user(username: str):
     """
     Endpoint to delete a user from the Firebase Realtime Database.
