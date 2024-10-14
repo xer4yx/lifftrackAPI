@@ -95,7 +95,7 @@ async def update_frame(frame: Frame):
         }
 
 
-@app.put("/user/create")
+@app.post("/user/create")
 def create_user(user: User):
     """
     Endpoint to create a new user in the Firebase Realtime Database.
@@ -114,7 +114,7 @@ def create_user(user: User):
             "isDeleted": user.isDeleted
         }
 
-        rtdb.put_data(user_data)
+        rtdb.post_data(user_data)
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except TypeError as te:
@@ -134,7 +134,7 @@ async def get_user_data(username: str, data=None):
 
 
 @app.put("/user/update/{username}")
-async def update_user_data(username: str, user: User, column=None):
+async def update_user_data(username: str, user: User):
     """
     Endpoint to update user data in the Firebase Realtime Database.
     """
