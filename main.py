@@ -1,43 +1,13 @@
-from rtdbHelper import RTDBHelper
+from lifttrack.models import User, Token, AppInfo, Frame
+from lifttrack import timedelta
+from lifttrack.auth import (create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES,
+                            get_current_user)
 
-from datetime import datetime
-from typing import Union
+from rtdbHelper import RTDBHelper
 import threading
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-
-
-class User(BaseModel):
-    id: str = datetime.strftime(datetime.now(), '%Y%H%d%m')
-    fname: str
-    lname: str
-    username: str
-    phoneNum: str
-    email: str
-    password: str
-    pfp: str = None
-    isAuthenticated: bool = False
-    isDeleted: bool = False
-
-
-class AppInfo(BaseModel):
-    app_name: str = "LiftTrack"
-    version: str = "1.0.0"
-    description: str = "An app to track your lifts and provide feedback on your form."
-
-
-class Frame(BaseModel):
-    user: str
-    original_frame: Union[int, int]
-    image: bytes
-
-
-class FormOutput(BaseModel):
-    user: str
-    current_reps: int
-    num_errors: int
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 
 
 app = FastAPI()
@@ -56,18 +26,40 @@ def read_root():
 
 
 @app.get("/app_info")
-def get_app_info():
+def get_app_info(app: AppInfo):
     """
     Endpoint to get information about the app.
     """
-
-    app = AppInfo()
-
     return {
         "app_name": app.app_name,
         "version": app.version,
         "description": app.description
     }
+
+
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = get_user_data(
+        username=form_data.username,
+        data=form_data.password
+    )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": form_data.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+# API Endpoint [USER]
+@app.get("/users/me/")
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    return current_user
 
 
 @app.post("/{user}/track")
@@ -77,22 +69,22 @@ async def update_frame(frame: Frame):
     and return the frame with keypoints drawn on it.
     """
     raise HTTPException(status_code=501, detail="Not Implemented")
-    global latest_frame
-
-    user = frame.user
-    original_frame = frame.original_frame
-    still_image = frame.image
-
-    try:
-        ...
-        # image = cast_image(still_image)
-        # keypoints = run_movenet_inference(image)
-
-    except HTTPException as httpe:
-        return {
-            "status": httpe.status_code,
-            "detail": httpe.detail
-        }
+    # global latest_frame
+    #
+    # user = frame.user
+    # original_frame = frame.original_frame
+    # still_image = frame.image
+    #
+    # try:
+    #     ...
+    #     image = cast_image(still_image)
+    #     keypoints = run_movenet_inference(image)
+    #
+    # except HTTPException as httpe:
+    #     return {
+    #         "status": httpe.status_code,
+    #         "detail": httpe.detail
+    #     }
 
 
 @app.put("/user/create")
