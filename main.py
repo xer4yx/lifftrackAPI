@@ -41,8 +41,7 @@ class FormOutput(BaseModel):
 
 
 server_origin = [
-    'http://localhost:8000',
-    'http://192.168.1.233:8000'
+    'http://localhost:8000'
 ]
 
 server_method = ["PUT", "GET", "DELETE"]
