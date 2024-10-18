@@ -42,7 +42,7 @@ class FormOutput(BaseModel):
 
 server_origin = [
     'http://localhost:8000',
-    'http://localhost:8989'
+    'http://127.0.0.1:8000/'
 ]
 
 server_method = ["PUT", "GET", "DELETE"]
@@ -130,6 +130,8 @@ def create_user(user: User):
         }
 
         rtdb.put_data(user_data)
+
+        return {"msg": "User created"}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except TypeError as te:
