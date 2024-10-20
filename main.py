@@ -145,6 +145,7 @@ def delete_user(username: str):
 
 
 # API Endpoint [Frame Operations]
+# TODO: Implement roboflow inference and 3D CNN Inference for Web and Mobile versions
 @app.websocket("/ws-tracking")  # Mobile version
 async def websocket_inference(websocket: WebSocket):
     """
