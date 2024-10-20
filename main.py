@@ -13,13 +13,13 @@ from lifttrack.auth import (create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES,
 import threading
 
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
 server_origin = [
-    'http://localhost:8000',
-    'http://127.0.0.1:8000/'
+    'http://localhost',
 ]
 
 server_method = ["PUT", "GET", "DELETE"]
@@ -34,11 +34,8 @@ app.add_middleware(
     allow_headers=server_header
 )
 
-
 latest_frame_lock = threading.Lock()
 latest_frame = None
-
-app = FastAPI()
 
 
 # API Endpoint [ROOT]
