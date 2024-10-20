@@ -1,22 +1,29 @@
-from lifttrack.models import User, Token, AppInfo, Frame
+import base64
+
+import numpy as np
+
+from lifttrack.rtdbHelper import *
+from lifttrack.models import User, Token, AppInfo
+from lifttrack.comvis import cv2, frame_queue, result_queue, generate_frames
+
 from lifttrack import timedelta
 from lifttrack.auth import (create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES,
                             get_current_user)
 
-from rtdbHelper import RTDBHelper
 import threading
 
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket
+from fastapi import WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
-
-
-app = FastAPI()
-rtdb = RTDBHelper()
 
 latest_frame_lock = threading.Lock()
 latest_frame = None
 
+app = FastAPI()
 
+
+# API Endpoint [ROOT]
 @app.get("/")
 def read_root():
     """
@@ -25,18 +32,16 @@ def read_root():
     return {"msg": "Welcome to LiftTrack!"}
 
 
+# API Endpoint [About App]
 @app.get("/app_info")
-def get_app_info(app: AppInfo):
+def get_app_info(appinfo: AppInfo):
     """
     Endpoint to get information about the app.
     """
-    return {
-        "app_name": app.app_name,
-        "version": app.version,
-        "description": app.description
-    }
+    return appinfo
 
 
+# API Endpoint [Authentication Operations]
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     user = get_user_data(
@@ -56,35 +61,13 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-# API Endpoint [USER]
+# API Endpoint [RTDB Operations]
 @app.get("/users/me/")
 async def read_users_me(current_user: User = Depends(get_current_user)):
+    """
+    Endpoint to get the current user.
+    """
     return current_user
-
-
-@app.post("/{user}/track")
-async def update_frame(frame: Frame):
-    """
-    Endpoint to receive frames from the mobile camera, perform pose estimation,
-    and return the frame with keypoints drawn on it.
-    """
-    raise HTTPException(status_code=501, detail="Not Implemented")
-    # global latest_frame
-    #
-    # user = frame.user
-    # original_frame = frame.original_frame
-    # still_image = frame.image
-    #
-    # try:
-    #     ...
-    #     image = cast_image(still_image)
-    #     keypoints = run_movenet_inference(image)
-    #
-    # except HTTPException as httpe:
-    #     return {
-    #         "status": httpe.status_code,
-    #         "detail": httpe.detail
-    #     }
 
 
 @app.put("/user/create")
@@ -106,7 +89,7 @@ def create_user(user: User):
             "isDeleted": user.isDeleted
         }
 
-        rtdb.put_data(user_data)
+        put_data(user_data)
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except TypeError as te:
@@ -119,7 +102,7 @@ async def get_user_data(username: str, data=None):
     Endpoint to get user data from the Firebase Realtime Database.
     """
     try:
-        user_data = rtdb.get_data(username, data)
+        user_data = get_data(username, data)
         return user_data
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
@@ -144,7 +127,7 @@ async def update_user_data(username: str, user: User):
             "isDeleted": user.isDeleted
         }
 
-        rtdb.update_data(username, user_data)
+        update_data(username, user_data)
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
 
@@ -155,7 +138,48 @@ def delete_user(username: str):
     Endpoint to delete a user from the Firebase Realtime Database.
     """
     try:
-        rtdb.delete_data(username)
+        delete_data(username)
         return {"msg": "User deleted"}
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
+
+
+# API Endpoint [Frame Operations]
+@app.websocket("/ws-tracking")  # Mobile version
+async def websocket_inference(websocket: WebSocket):
+    """
+    Websocket endpoint for the MoveNet model.
+    """
+    await websocket.accept()
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            original_frame = base64.b64decode(data)
+            frame = cv2.imdecode(np.frombuffer(original_frame, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+            if not frame_queue.full():
+                frame_queue.put(frame)
+
+            if not result_queue.empty():
+                annotated_frame = result_queue.get()
+                _, buffer = cv2.imencode(".jpg", annotated_frame)
+                encoded_frame = base64.b64encode(buffer).decode('utf-8')
+                await websocket.send_text(encoded_frame)
+    except WebSocketDisconnect as wsde:
+        return {
+            "code": str(wsde.code),
+            "msg": "WebSocket connection closed.",
+            "details": str(wsde.reason)
+        }, await websocket.close()
+
+
+@app.get("/stream-tracking")
+async def video_feed():  # Web version
+    """
+    Endpoint for the video feed.
+    """
+    return StreamingResponse(
+        generate_frames(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )

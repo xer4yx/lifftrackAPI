@@ -1,3 +1,4 @@
+from lifttrack import rtdb
 from lifttrack import datetime, timedelta, Optional, config
 from lifttrack.models import TokenData
 
@@ -12,17 +13,17 @@ SECRET_KEY = config.get(section='Authentication', option='SECRET_KEY')
 ALGORITHM = config.get(section='Authentication', option='ALGORITHM')
 ACCESS_TOKEN_EXPIRE_MINUTES = int(config.get(section='Authentication', option='TTL'))
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+hash_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    return hash_context.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password):
-    return pwd_context.hash(password)
+    return hash_context.hash(password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -50,7 +51,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         token_data = TokenData(username=username)
     except JWTError:
         raise credentials_exception
-    user = get_data(username=token_data.username)
+    user = rtdb.get_data(username=token_data.username)
     if user is None:
         raise credentials_exception
     return user
