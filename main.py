@@ -17,6 +17,24 @@ from fastapi import WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
+server_origin = [
+    'http://localhost:8000',
+    'http://127.0.0.1:8000/'
+]
+
+server_method = ["PUT", "GET", "DELETE"]
+
+server_header = ["*"]
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=server_origin,
+    allow_methods=server_method,
+    allow_headers=server_header
+)
+
+
 latest_frame_lock = threading.Lock()
 latest_frame = None
 
