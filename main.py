@@ -1,16 +1,10 @@
-import base64
-
-import numpy as np
-
 from lifttrack.dbhandler.rtdbHelper import *
 from lifttrack.models import User, Token, AppInfo
-from lifttrack.comvis import cv2, frame_queue, result_queue, generate_frames
+from lifttrack.comvis import cv2, frame_queue, result_queue, process_frames, generate_frames
 
-from lifttrack import timedelta
+from lifttrack import timedelta, threading, asyncio
 from lifttrack.auth import (create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES,
                             get_current_user)
-
-import threading
 
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -163,31 +157,23 @@ def delete_user(username: str):
 # TODO: Implement roboflow inference and 3D CNN Inference for Web and Mobile versions
 @app.websocket("/ws-tracking")  # Mobile version
 async def websocket_inference(websocket: WebSocket):
-    """
-    Websocket endpoint for the MoveNet model.
-    """
     await websocket.accept()
 
     try:
         while True:
-            data = await websocket.receive_text()
-            original_frame = base64.b64decode(data)
-            frame = cv2.imdecode(np.frombuffer(original_frame, dtype=np.uint8), cv2.IMREAD_COLOR)
+            frame_data = await websocket.receive_bytes()
 
-            if not frame_queue.full():
-                frame_queue.put(frame)
+            # Process frame in thread pool to avoid blocking
+            annotated_frame = await asyncio.get_event_loop().run_in_executor(
+                None, process_frames, frame_data
+            )
 
-            if not result_queue.empty():
-                annotated_frame = result_queue.get()
-                _, buffer = cv2.imencode(".jpg", annotated_frame)
-                encoded_frame = base64.b64encode(buffer).decode('utf-8')
-                await websocket.send_text(encoded_frame)
-    except WebSocketDisconnect as wsde:
-        return {
-            "code": str(wsde.code),
-            "msg": "WebSocket connection closed.",
-            "details": str(wsde.reason)
-        }, await websocket.close()
+            # Encode and send result
+            _, buffer = cv2.imencode('.jpg', annotated_frame)
+            await websocket.send_bytes(buffer.tobytes())
+
+    except WebSocketDisconnect:
+        await websocket.close()
 
 
 @app.get("/stream-tracking")

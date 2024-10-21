@@ -1,7 +1,6 @@
 import io
 import time
-import tensorflow as tf
-import tensorflow_hub as hub
+from lifttrack.comvis import tf, hub
 
 
 def cast_image(image):

@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.patches as patches
 from matplotlib.collections import LineCollection
 
-from lifttrack.comvis import cv2
+from lifttrack import cv2
 import matplotlib.pyplot as plt
 
 KEYPOINT_DICT = {
@@ -167,7 +167,10 @@ def draw_prediction(
     image_from_plot = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
     image_from_plot = image_from_plot.reshape(
         fig.canvas.get_width_height()[::-1] + (3,))
-    # plt.close(fig)
+
+    if close_figure:
+        plt.close(fig)
+
     if output_image_height is not None:
         output_image_width = int(output_image_height / height * width)
         image_from_plot = cv2.resize(
