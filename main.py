@@ -2,7 +2,7 @@ import base64
 
 import numpy as np
 
-from lifttrack.rtdbHelper import *
+from lifttrack.dbhandler.rtdbHelper import *
 from lifttrack.models import User, Token, AppInfo
 from lifttrack.comvis import cv2, frame_queue, result_queue, generate_frames
 

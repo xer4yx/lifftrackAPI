@@ -1,4 +1,4 @@
-from lifttrack import rtdb
+from lifttrack.dbhandler import rtdb
 
 
 def put_data(user_data: dict[str, any]):
