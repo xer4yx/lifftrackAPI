@@ -1,4 +1,4 @@
-from lifttrack.dbhandler import rtdb
+from lifttrack.dbhandler.rtdbHelper import rtdb
 from lifttrack import datetime, timedelta, Optional, config
 from lifttrack.models import TokenData
 

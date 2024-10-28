@@ -1,19 +1,18 @@
-from lifttrack.dbhandler.rtdbHelper import *
-from lifttrack.models import User, Token, AppInfo
-from lifttrack.comvis import cv2, frame_queue, result_queue, process_frames, generate_frames
+from lifttrack.dbhandler.rtdbHelper import rtdb
+from lifttrack.models import User, Token, AppInfo, LoginForm
+from lifttrack.comvis import cv2, websocket_process_frames
 
 from lifttrack import timedelta, threading, asyncio
 from lifttrack.auth import (create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES,
-                            get_current_user)
+                            get_current_user, verify_password, get_password_hash)
 
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocketDisconnect
-from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
 server_origin = [
-    'http://localhost',
+    'http://localhost:8000  ',
 ]
 
 server_method = ["PUT", "GET", "DELETE"]
@@ -34,7 +33,7 @@ latest_frame = None
 
 # API Endpoint [ROOT]
 @app.get("/")
-def read_root():
+async def read_root():
     """
     Root endpoint.
     """
@@ -43,14 +42,27 @@ def read_root():
 
 # API Endpoint [About App]
 @app.get("/app_info")
-def get_app_info(appinfo: AppInfo):
+async def get_app_info(appinfo: AppInfo):
     """
     Endpoint to get information about the app.
     """
-    return appinfo
+    return await appinfo
 
 
 # API Endpoint [Authentication Operations]
+@app.post("/login")
+async def login(login_form: LoginForm):
+    user_data = rtdb.get_data(login_form.username)
+
+    if not user_data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_password(login_form.password, user_data["password"]):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    return {"message": "Login successful", "success": True}
+
+
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     user = get_user_data(
@@ -98,7 +110,7 @@ def create_user(user: User):
             "isDeleted": user.isDeleted
         }
 
-        put_data(user_data)
+        rtdb.put_data(user_data)
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except TypeError as te:
@@ -111,7 +123,7 @@ async def get_user_data(username: str, data=None):
     Endpoint to get user data from the Firebase Realtime Database.
     """
     try:
-        user_data = get_data(username, data)
+        user_data = rtdb.get_data(username, data)
         return user_data
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
@@ -136,7 +148,7 @@ async def update_user_data(username: str, user: User):
             "isDeleted": user.isDeleted
         }
 
-        update_data(username, user_data)
+        rtdb.update_data(username, user_data)
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
 
@@ -147,7 +159,7 @@ def delete_user(username: str):
     Endpoint to delete a user from the Firebase Realtime Database.
     """
     try:
-        delete_data(username)
+        rtdb.delete_data(username)
         return {"msg": "User deleted"}
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
@@ -158,30 +170,40 @@ def delete_user(username: str):
 @app.websocket("/ws-tracking")  # Mobile version
 async def websocket_inference(websocket: WebSocket):
     await websocket.accept()
-
-    try:
-        while True:
+    connection_open = True
+    while connection_open:
+        try:
             frame_data = await websocket.receive_bytes()
+            print("Frame received")
 
             # Process frame in thread pool to avoid blocking
             annotated_frame = await asyncio.get_event_loop().run_in_executor(
-                None, process_frames, frame_data
+                None, websocket_process_frames, frame_data
             )
 
-            # Encode and send result
-            _, buffer = cv2.imencode('.jpg', annotated_frame)
-            await websocket.send_bytes(buffer.tobytes())
+            # annotated_frame = websocket_process_frames(frame_data)
 
-    except WebSocketDisconnect:
+            # Encode and send result
+            encoded, buffer = cv2.imencode('.jpeg', annotated_frame)
+
+            if not encoded:
+                print("Error encoding frame")
+                raise WebSocketDisconnect
+
+            await websocket.send_bytes(buffer.tobytes())
+            print("Frame sent")
+        except WebSocketDisconnect:
+            connection_open = False
+    if connection_open:
         await websocket.close()
 
 
-@app.get("/stream-tracking")
-async def video_feed():  # Web version
-    """
-    Endpoint for the video feed.
-    """
-    return StreamingResponse(
-        generate_frames(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
-    )
+# @app.get("/stream-tracking")
+# async def video_feed():  # Web version
+#     """
+#     Endpoint for the video feed.
+#     """
+#     return StreamingResponse(
+#         generate_frames(),
+#         media_type="multipart/x-mixed-replace; boundary=frame"
+#     )
