@@ -178,18 +178,6 @@ async def websocket_inference(websocket: WebSocket):
         try:
             frame_data = await websocket.receive()
 
-            print(frame_data)
-
-            # if "bytes" in message:
-            #     frame_data = message["bytes"]
-            # elif "text" in message:
-            #     # Handle text messages if needed
-            #     print(f"Received text message: {message['text']}")
-            #     continue
-            # else:
-            #     print("Unsupported message type")
-            #     continue
-
             # Process frame in thread pool to avoid blocking
             annotated_frame = await asyncio.get_event_loop().run_in_executor(
                 None, websocket_process_frames, frame_data

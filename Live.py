@@ -3,7 +3,6 @@ import cv2
 import tensorflow as tf
 import tensorflow_hub as hub
 import numpy as np
-from tensorflow.keras.models import load_model
 from inference_sdk import InferenceHTTPClient
 
 # Define a mapping of class indices to class names
@@ -38,7 +37,7 @@ def print_prediction(prediction):
 
 class ExerciseFormAnalyzer:
     def __init__(self, model_path='model/exercise_model_20241027_163105.keras', input_shape=(112, 112), max_video_length=30):
-        self.model = load_model(model_path)
+        self.model = tf.keras.models.load_model(model_path)
         self.input_shape = input_shape
         self.max_video_length = max_video_length
         
