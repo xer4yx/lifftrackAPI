@@ -12,7 +12,7 @@ from fastapi import WebSocketDisconnect
 from fastapi.security import OAuth2PasswordRequestForm
 
 server_origin = [
-    'http://localhost:8000  ',
+    'http://localhost:8000',
 ]
 
 server_method = ["PUT", "GET", "DELETE"]
@@ -52,6 +52,9 @@ async def get_app_info(appinfo: AppInfo):
 # API Endpoint [Authentication Operations]
 @app.post("/login")
 async def login(login_form: LoginForm):
+    """
+    Endpoint to login a user.
+    """
     user_data = rtdb.get_data(login_form.username)
 
     if not user_data:
@@ -104,7 +107,7 @@ def create_user(user: User):
             "username": user.username,
             "phoneNum": user.phoneNum,
             "email": user.email,
-            "password": user.password,
+            "password": get_password_hash(user.password),
             "pfp": user.pfp,
             "isAuthenticated": user.isAuthenticated,
             "isDeleted": user.isDeleted
@@ -173,15 +176,24 @@ async def websocket_inference(websocket: WebSocket):
     connection_open = True
     while connection_open:
         try:
-            frame_data = await websocket.receive_bytes()
-            print("Frame received")
+            frame_data = await websocket.receive()
+
+            print(frame_data)
+
+            # if "bytes" in message:
+            #     frame_data = message["bytes"]
+            # elif "text" in message:
+            #     # Handle text messages if needed
+            #     print(f"Received text message: {message['text']}")
+            #     continue
+            # else:
+            #     print("Unsupported message type")
+            #     continue
 
             # Process frame in thread pool to avoid blocking
             annotated_frame = await asyncio.get_event_loop().run_in_executor(
                 None, websocket_process_frames, frame_data
             )
-
-            # annotated_frame = websocket_process_frames(frame_data)
 
             # Encode and send result
             encoded, buffer = cv2.imencode('.jpeg', annotated_frame)
@@ -194,6 +206,10 @@ async def websocket_inference(websocket: WebSocket):
             print("Frame sent")
         except WebSocketDisconnect:
             connection_open = False
+        except Exception as e:
+            print(f"Error: {str(e)}")
+            connection_open = False
+
     if connection_open:
         await websocket.close()
 
