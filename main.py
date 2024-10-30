@@ -34,27 +34,21 @@ latest_frame = None
 # API Endpoint [ROOT]
 @app.get("/")
 async def read_root():
-    """
-    Root endpoint.
-    """
+    """Root endpoint."""
     return {"msg": "Welcome to LiftTrack!"}
 
 
 # API Endpoint [About App]
 @app.get("/app_info")
 async def get_app_info(appinfo: AppInfo):
-    """
-    Endpoint to get information about the app.
-    """
-    return await appinfo
+    """Endpoint to get information about the app."""
+    return appinfo
 
 
 # API Endpoint [Authentication Operations]
 @app.post("/login")
 async def login(login_form: LoginForm):
-    """
-    Endpoint to login a user.
-    """
+    """Endpoint to login a user."""
     user_data = rtdb.get_data(login_form.username)
 
     if not user_data:
@@ -68,6 +62,7 @@ async def login(login_form: LoginForm):
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Endpoint to get an access token."""
     user = get_user_data(
         username=form_data.username,
         data=form_data.password
@@ -96,9 +91,7 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 
 @app.put("/user/create")
 def create_user(user: User):
-    """
-    Endpoint to create a new user in the Firebase Realtime Database.
-    """
+    """Endpoint to create a new user in the Firebase Realtime Database."""
     try:
         user_data = {
             "id": user.id,
@@ -113,7 +106,17 @@ def create_user(user: User):
             "isDeleted": user.isDeleted
         }
 
-        rtdb.put_data(user_data)
+        snapshot = rtdb.put_data(user_data)
+        if snapshot is None:
+            return {
+                "status": 404,
+                "msg": "User not created"
+            }
+
+        return {
+            "status": 201,
+            "msg": "User created"
+        }
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except TypeError as te:
@@ -122,11 +125,16 @@ def create_user(user: User):
 
 @app.get("/user/{username}")
 async def get_user_data(username: str, data=None):
-    """
-    Endpoint to get user data from the Firebase Realtime Database.
-    """
+    """Endpoint to get user data from the Firebase Realtime Database."""
     try:
         user_data = rtdb.get_data(username, data)
+
+        if user_data is None:
+            return {
+                "status": 404,
+                "msg": "User not found"
+            }
+
         return user_data
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
@@ -134,9 +142,7 @@ async def get_user_data(username: str, data=None):
 
 @app.put("/user/{username}")
 async def update_user_data(username: str, user: User):
-    """
-    Endpoint to update user data in the Firebase Realtime Database.
-    """
+    """Endpoint to update user data in the Firebase Realtime Database."""
     try:
         user_data = {
             "id": user.id,
@@ -151,19 +157,36 @@ async def update_user_data(username: str, user: User):
             "isDeleted": user.isDeleted
         }
 
-        rtdb.update_data(username, user_data)
+        snapshot = rtdb.update_data(username, user_data)
+        if snapshot is None:
+            return {
+                "status": 404,
+                "msg": "User not updated"
+            }
+
+        return {
+            "status": 200,
+            "msg": "User updated."
+        }
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
 
 
 @app.delete("/user/{username}")
 def delete_user(username: str):
-    """
-    Endpoint to delete a user from the Firebase Realtime Database.
-    """
+    """Endpoint to delete a user from the Firebase Realtime Database."""
     try:
-        rtdb.delete_data(username)
-        return {"msg": "User deleted"}
+        deleted = rtdb.delete_data(username)
+        if not deleted:
+            return {
+                "status": 404,
+                "msg": "User not deleted"
+            }
+
+        return {
+            "status": 200,
+            "msg": "User deleted"
+        }
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
 
@@ -178,6 +201,8 @@ async def websocket_inference(websocket: WebSocket):
         try:
             frame_data = await websocket.receive()
 
+            frame_data = bytes(frame_data)
+
             # Process frame in thread pool to avoid blocking
             annotated_frame = await asyncio.get_event_loop().run_in_executor(
                 None, websocket_process_frames, frame_data
@@ -187,11 +212,9 @@ async def websocket_inference(websocket: WebSocket):
             encoded, buffer = cv2.imencode('.jpeg', annotated_frame)
 
             if not encoded:
-                print("Error encoding frame")
                 raise WebSocketDisconnect
 
             await websocket.send_bytes(buffer.tobytes())
-            print("Frame sent")
         except WebSocketDisconnect:
             connection_open = False
         except Exception as e:
