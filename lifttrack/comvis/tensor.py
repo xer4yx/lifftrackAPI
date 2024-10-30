@@ -1,6 +1,8 @@
 import io
-import tensorflow as tf
-import tensorflow_hub as hub
+import time
+from lifttrack.comvis import tf, hub
+
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 
 def cast_image(image):
@@ -21,14 +23,18 @@ def cast_image(image):
 
 class MoveNetHelper:
     def __init__(self):
-        model = hub.load('https://tfhub.dev/google/movenet/singlepose/lightning/4')
+        start_time = time.time()
+        model = hub.load('https://kaggle.com/models/google/movenet/Tensorflow2/singlepose-lightning/4')
         self.movenet = model.signatures['serving_default']
+        end_time = time.time()
+        print(f"Model loaded in {end_time - start_time:.2f} seconds")
 
-    def run_inference(self, input):
+    def run_inference(self, input, inference_count=5):
         """
         Runs MoveNet model for Pose Estimation.
         """
-        movenet_inference = self.movenet(input)
-        keypoints = movenet_inference['output_0']
-
-        return keypoints
+        for _ in range(inference_count-1):
+            inference = self.movenet(input)
+        keypoints = inference['output_0']
+        # Reshape keypoints to [17, 3] format
+        return keypoints  # Returns shape [17, 3]

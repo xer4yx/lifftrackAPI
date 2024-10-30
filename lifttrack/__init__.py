@@ -1,29 +1,14 @@
+import os
+import threading
+import asyncio
 from datetime import datetime, timedelta
+import logging
 import configparser
 from pydantic import BaseModel
 from typing import Optional, Union
-from firebase import firebase
+import cv2
+
+config_path = os.path.join(os.path.dirname(__file__), '..', 'config.ini')
 
 config = configparser.ConfigParser()
-config.read('../config.ini')
-
-
-class RTDBHelper:
-    def __init__(self):
-        self.__config = configparser.ConfigParser()
-
-        if not self.__config.read('config.ini'):
-            raise FileNotFoundError('Config file not found')
-
-        if not self.__config.has_section('Firebase'):
-            raise KeyError('Config file is missing Firebase section')
-
-        self.__dsn = self.__config.get(section='Firebase', option='dsn')
-        self.__auth = self.__config.get(section='Firebase', option='authentication')
-        self.__db = firebase.FirebaseApplication(
-            dsn=self.__dsn,
-            authentication=(lambda: None, lambda: self.__auth)[self.__auth != 'None']()
-        )
-
-
-rtdb = RTDBHelper()
+config.read(config_path)

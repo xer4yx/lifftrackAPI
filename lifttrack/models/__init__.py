@@ -14,6 +14,11 @@ class User(BaseModel):
     isDeleted: bool = False
 
 
+class LoginForm(BaseModel):
+    username: str
+    password: str
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str
