@@ -2,7 +2,7 @@ from lifttrack.dbhandler.rtdbHelper import rtdb
 from lifttrack.models import User, Token, AppInfo, LoginForm
 from lifttrack.comvis import cv2, websocket_process_frames
 
-from lifttrack import timedelta, threading, asyncio
+from lifttrack import timedelta, threading, asyncio, ast
 from lifttrack.auth import (create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES,
                             get_current_user, verify_password, get_password_hash)
 
@@ -192,7 +192,6 @@ def delete_user(username: str):
 
 
 # API Endpoint [Frame Operations]
-# TODO: Implement roboflow inference and 3D CNN Inference for Web and Mobile versions
 @app.websocket("/ws-tracking")  # Mobile version
 async def websocket_inference(websocket: WebSocket):
     await websocket.accept()
@@ -201,7 +200,9 @@ async def websocket_inference(websocket: WebSocket):
         try:
             frame_data = await websocket.receive()
 
-            frame_data = bytes(frame_data)
+            frame_data = ast.literal_eval(frame_data['text'])
+
+            print(frame_data)
 
             # Process frame in thread pool to avoid blocking
             annotated_frame = await asyncio.get_event_loop().run_in_executor(
@@ -209,7 +210,7 @@ async def websocket_inference(websocket: WebSocket):
             )
 
             # Encode and send result
-            encoded, buffer = cv2.imencode('.jpeg', annotated_frame)
+            encoded, buffer = cv2.imencode(".jpeg", annotated_frame)
 
             if not encoded:
                 raise WebSocketDisconnect
@@ -218,7 +219,7 @@ async def websocket_inference(websocket: WebSocket):
         except WebSocketDisconnect:
             connection_open = False
         except Exception as e:
-            print(f"Error: {str(e)}")
+            print(f"Error: {e}")
             connection_open = False
 
     if connection_open:

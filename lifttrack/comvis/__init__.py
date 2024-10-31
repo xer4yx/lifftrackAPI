@@ -18,8 +18,10 @@ result_queue = Queue(maxsize=1)
 def websocket_process_frames(frame_data):
     # Decode the frame data
     np_frame = np.frombuffer(frame_data, np.uint8)
+    print(np_frame)
     frame = cv2.imdecode(np_frame, cv2.IMREAD_COLOR)
 
+    print(frame.shape)
     height, width, _ = frame.shape
 
     # Prepare input for model
