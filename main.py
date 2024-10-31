@@ -202,13 +202,15 @@ async def websocket_inference(websocket: WebSocket):
 
             frame_data = ast.literal_eval(frame_data['text'])
 
+            print(frame_data)
+
             # Process frame in thread pool to avoid blocking
             annotated_frame = await asyncio.get_event_loop().run_in_executor(
                 None, websocket_process_frames, frame_data
             )
 
             # Encode and send result
-            encoded, buffer = cv2.imencode('.jpeg', annotated_frame)
+            encoded, buffer = cv2.imencode(".jpeg", annotated_frame)
 
             if not encoded:
                 raise WebSocketDisconnect
@@ -217,7 +219,7 @@ async def websocket_inference(websocket: WebSocket):
         except WebSocketDisconnect:
             connection_open = False
         except Exception as e:
-            print(f"Error: {str(e)}\n{e.__cause__}")
+            print(f"Error: {e}")
             connection_open = False
 
     if connection_open:

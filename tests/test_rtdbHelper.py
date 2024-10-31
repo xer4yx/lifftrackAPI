@@ -1,4 +1,4 @@
-from lifttrack.rtdbHelper import RTDBHelper
+from lifttrack.dbhandler.rtdbHelper import RTDBHelper
 
 
 class TestRTDBHelper:
