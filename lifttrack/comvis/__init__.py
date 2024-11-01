@@ -6,13 +6,84 @@ import tensorflow_hub as hub
 import numpy as np
 
 from lifttrack import cv2
-from lifttrack.comvis.tensor import MoveNetHelper
+from lifttrack.comvis.tensor import MoveNetInference, RoboflowInference
 from lifttrack.utils import draw_prediction
 
-movenet = MoveNetHelper()
+movenet = MoveNetInference()
+roboflow = RoboflowInference()
 
 frame_queue = Queue(maxsize=30)
 result_queue = Queue(maxsize=30)
+
+
+def run_inference(frame):
+    """Run both MoveNet and Roboflow inference"""
+
+    # MoveNet inference
+    img = tf.image.resize_with_pad(tf.expand_dims(frame, axis=0), 192, 192)
+    input_img = tf.cast(img, dtype=tf.int32)
+    keypoints = movenet.run_keypoint_inference(input_img)
+
+    # Roboflow inference
+    try:
+        roboflow_results = roboflow.run_object_inference(frame)
+    except Exception as e:
+        print(f"Error during Roboflow inference: {e}")
+        roboflow_results = {'predictions': [], 'image': {}}
+
+    # Combine results
+    frame_annotation = {
+        'keypoints': keypoints,
+        'objects': roboflow_results['predictions'],
+        'image_info': roboflow_results['image']
+    }
+
+    return frame_annotation
+
+
+def extract_features(self, annotation):
+    """Extract features from a single annotation"""
+    if not isinstance(annotation, dict):
+        print(f"Expected a dictionary for annotation, got {type(annotation)}: {annotation}")
+        return np.zeros(9, dtype=np.float32)
+
+    keypoints = annotation.get('keypoints', {})
+    objects = annotation.get('objects', [])
+
+    if not keypoints:
+        return np.zeros(9, dtype=np.float32)
+
+    elbow_angle = self.calculate_angle(keypoints.get('left_shoulder', [0, 0]), keypoints.get('left_elbow', [0, 0]),
+                                       keypoints.get('left_wrist', [0, 0]))
+    knee_angle = self.calculate_angle(keypoints.get('left_hip', [0, 0]), keypoints.get('left_knee', [0, 0]),
+                                      keypoints.get(' left_ankle', [0, 0]))
+    hip_angle = self.calculate_angle(keypoints.get('left_shoulder', [0, 0]), keypoints.get('left_hip', [0, 0]),
+                                     keypoints.get('left_knee', [0, 0]))
+    spine_vertical = self.calculate_angle(keypoints.get('left_shoulder', [0, 0]), keypoints.get('left_hip', [0, 0]),
+                                          [keypoints.get('left_hip', [0, 0])[0], 0])
+
+    weight_position = next(
+        (self.calculate_distance([obj.get('x', 0), obj.get('y', 0)], keypoints.get('left_shoulder', [0, 0])) for obj
+         in objects if obj.get('class') in ['barbell', 'dumbbell']), 0.0)
+
+    shoulder_symmetry = abs(keypoints.get('left_shoulder', [0, 0])[1] - keypoints.get('right_shoulder', [0, 0])[1])
+    stability = np.mean(
+        [self.calculate_distance(keypoints.get('left_shoulder', [0, 0]), keypoints.get('right_shoulder', [0, 0])),
+         self.calculate_distance(keypoints.get('left_hip', [0, 0]), keypoints.get('right_hip', [0, 0]))])
+    bar_path_deviation = np.std(
+        [pos.get('x', 0) for pos in objects if pos.get('class') in ['barbell', 'dumbbell']]) if objects else 0.0
+
+    return np.array([
+        elbow_angle / 180.0,
+        knee_angle / 180.0,
+        hip_angle / 180.0,
+        spine_vertical / 90.0,
+        weight_position / 100.0,
+        shoulder_symmetry / 50.0,
+        stability / 50.0,
+        bar_path_deviation / 50.0,
+        1.0  # Reserved for additional features
+    ], dtype=np.float32)
 
 
 def websocket_process_frames(frame_data):
@@ -28,7 +99,7 @@ def websocket_process_frames(frame_data):
     input_image = tf.cast(input_image, dtype=tf.int32)
 
     # Run inference
-    keypoints = movenet.run_inference(input_image)
+    keypoints = movenet.run_keypoint_inference(input_image)
 
     # Draw predictions
     annotated_frame = draw_prediction(
