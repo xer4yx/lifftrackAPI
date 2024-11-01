@@ -11,17 +11,15 @@ from lifttrack.utils import draw_prediction
 
 movenet = MoveNetHelper()
 
-frame_queue = Queue(maxsize=1)
-result_queue = Queue(maxsize=1)
+frame_queue = Queue(maxsize=30)
+result_queue = Queue(maxsize=30)
 
 
 def websocket_process_frames(frame_data):
     # Decode the frame data
     np_frame = np.frombuffer(frame_data, np.uint8)
-    print(np_frame)
     frame = cv2.imdecode(np_frame, cv2.IMREAD_COLOR)
 
-    print(frame.shape)
     height, width, _ = frame.shape
 
     # Prepare input for model
@@ -38,6 +36,8 @@ def websocket_process_frames(frame_data):
         keypoints,
         output_image_height=height
     )
+
+    print(annotated_frame)
 
     return annotated_frame
 

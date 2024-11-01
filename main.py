@@ -1,10 +1,9 @@
+from lifttrack import timedelta, threading, asyncio, base64
 from lifttrack.dbhandler.rtdbHelper import rtdb
 from lifttrack.models import User, Token, AppInfo, LoginForm
 from lifttrack.comvis import cv2, websocket_process_frames
-
-from lifttrack import timedelta, threading, asyncio, ast
-from lifttrack.auth import (create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES,
-                            get_current_user, verify_password, get_password_hash)
+from lifttrack.auth import (create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_user, verify_password,
+                            get_password_hash)
 
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -172,6 +171,46 @@ async def update_user_data(username: str, user: User):
         raise HTTPException(status_code=404, detail=str(ve))
 
 
+@app.put("/user/{username}/change-pass")
+async def change_password(username: str, user: User):
+    """Endpoint to change user password."""
+    try:
+        hashed_pass = rtdb.get_data(username, "password")
+
+        if not verify_password(user.password, hashed_pass):
+            return {
+                "status": 401,
+                "msg": "Incorrect password."
+            }
+
+        user_data = {
+            "id": user.id,
+            "fname": user.fname,
+            "lname": user.lname,
+            "username": user.username,
+            "phoneNum": user.phoneNum,
+            "email": user.email,
+            "password": get_password_hash(user.password),
+            "pfp": user.pfp,
+            "isAuthenticated": user.isAuthenticated,
+            "isDeleted": user.isDeleted
+        }
+
+        snapshot = rtdb.update_data(username, user_data)
+        if snapshot is None:
+            return {
+                "status": 404,
+                "msg": "User not updated"
+            }
+
+        return {
+            "status": 200,
+            "msg": "User updated."
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+
+
 @app.delete("/user/{username}")
 def delete_user(username: str):
     """Endpoint to delete a user from the Firebase Realtime Database."""
@@ -200,9 +239,7 @@ async def websocket_inference(websocket: WebSocket):
         try:
             frame_data = await websocket.receive()
 
-            frame_data = ast.literal_eval(frame_data['text'])
-
-            print(frame_data)
+            frame_data = base64.b64decode(frame_data["text"])
 
             # Process frame in thread pool to avoid blocking
             annotated_frame = await asyncio.get_event_loop().run_in_executor(
