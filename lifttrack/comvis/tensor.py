@@ -27,11 +27,11 @@ def cast_image(image):
 
 class MoveNetInference:
     def __init__(self):
-        start_time = time.time()
+        self.__start_time = time.time()
         model = hub.load(config.get(section="TensorHub", option="model"))
         self.movenet = model.signatures[config.get(section="TensorHub", option="signature")]
-        end_time = time.time()
-        print(f"Model loaded in {end_time - start_time:.2f} seconds")
+        self.__end_time = time.time()
+        print(f"{self.__class__.__name__} model loaded in {self.__end_time - self.__start_time:.2f} seconds")
 
     def run_keypoint_inference(self, input, inference_count=5):
         """
@@ -47,12 +47,14 @@ class MoveNetInference:
 class RoboflowInference:
     def __init__(self):
         self.project_id = config.get(section="Roboflow", option="project_id")
-        self.model_version = int(config.get(section="Roboflow", option="model_version"))
-
+        self.model_version = int(config.get(section="Roboflow", option="model_ver"))
+        self.__start_time = time.time()
         self.roboflow_client = InferenceHTTPClient(
             api_url=config.get(section="Roboflow", option="api_url"),
             api_key=config.get(section="Roboflow", option="api_key")
         )
+        self.__end_time = time.time()
+        print(f"{self.__class__.__name__} model loaded in {self.__end_time - self.__start_time:.2f} seconds")
 
     def run_object_inference(self, frame):
         return self.roboflow_client.infer(

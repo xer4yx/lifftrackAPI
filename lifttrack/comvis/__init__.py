@@ -16,13 +16,14 @@ frame_queue = Queue(maxsize=30)
 result_queue = Queue(maxsize=30)
 
 
+# TODO: Implement this function for `extract_features`
 def run_inference(frame):
     """Run both MoveNet and Roboflow inference"""
 
     # MoveNet inference
-    img = tf.image.resize_with_pad(tf.expand_dims(frame, axis=0), 192, 192)
-    input_img = tf.cast(img, dtype=tf.int32)
-    keypoints = movenet.run_keypoint_inference(input_img)
+    # img = tf.image.resize_with_pad(tf.expand_dims(frame, axis=0), 192, 192)
+    # input_img = tf.cast(img, dtype=tf.int32)
+    keypoints = movenet.run_keypoint_inference(frame)
 
     # Roboflow inference
     try:
@@ -41,6 +42,7 @@ def run_inference(frame):
     return frame_annotation
 
 
+# TODO: Create a `calculate_angle` and `calculate_distance` function
 def extract_features(self, annotation):
     """Extract features from a single annotation"""
     if not isinstance(annotation, dict):
@@ -86,7 +88,14 @@ def extract_features(self, annotation):
     ], dtype=np.float32)
 
 
+# TODO: Implement `run_inference` and `extract_features` in this function
+# TODO: Implement 3D CNN inference from `Live.py`
 def websocket_process_frames(frame_data):
+    """
+    Process a single frame for inference.
+    :param frame_data:
+    :return:
+    """
     # Decode the frame data
     np_frame = np.frombuffer(frame_data, np.uint8)
     frame = cv2.imdecode(np_frame, cv2.IMREAD_COLOR)
@@ -111,7 +120,6 @@ def websocket_process_frames(frame_data):
     print(annotated_frame)
 
     return annotated_frame
-
 
 # def process_frames():
 #     while True:
