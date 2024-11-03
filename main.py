@@ -38,7 +38,7 @@ async def read_root():
 
 
 # API Endpoint [About App]
-@app.get("/app_info")
+@app.get("/app-info")
 async def get_app_info(appinfo: AppInfo):
     """Endpoint to get information about the app."""
     return appinfo
@@ -126,12 +126,12 @@ def create_user(user: User):
         snapshot = rtdb.put_data(user_data)
         if snapshot is None:
             return {
-                "status": 404,
+                "status": 400,
                 "msg": "User not created"
             }
 
         return {
-            "status": 201,
+            "status": 200,
             "msg": "User created"
         }
     except ValueError as ve:
@@ -195,14 +195,15 @@ async def update_user_data(username: str, user: User):
 
         return {
             "status": 200,
-            "msg": "User updated."
+            "msg": "User updated.",
+            "content": snapshot
         }
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
 
 
 @app.put("/user/{username}/change-pass")
-async def change_password(username: str, user: User):
+async def change_password(user: User):
     """
     Endpoint to change user password.
 
@@ -211,7 +212,7 @@ async def change_password(username: str, user: User):
         user: User model that contains user data.
     """
     try:
-        hashed_pass = rtdb.get_data(username, "password")
+        hashed_pass = rtdb.get_data(user.username, "password")
 
         if not verify_password(user.password, hashed_pass):
             return {
@@ -232,7 +233,7 @@ async def change_password(username: str, user: User):
             "isDeleted": user.isDeleted
         }
 
-        snapshot = rtdb.update_data(username, user_data)
+        snapshot = rtdb.update_data(user.username, user_data)
         if snapshot is None:
             return {
                 "status": 404,
@@ -288,11 +289,11 @@ async def websocket_inference(websocket: WebSocket):
         try:
             frame_data = await websocket.receive()
 
-            frame_data = base64.b64decode(frame_data["text"])
+            frame_byte = base64.b64decode(frame_data["text"])
 
             # Process frame in thread pool to avoid blocking
-            annotated_frame = await asyncio.get_event_loop().run_in_executor(
-                None, websocket_process_frames, frame_data
+            (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
+                None, websocket_process_frames, frame_byte
             )
 
             # Encode and send result

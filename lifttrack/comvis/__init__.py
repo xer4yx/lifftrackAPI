@@ -1,11 +1,12 @@
+import io
 from queue import Queue
-import threading
 
 import tensorflow as tf
 import tensorflow_hub as hub
 import numpy as np
+from numpy import ndarray
 
-from lifttrack import cv2
+from lifttrack import cv2, Mat
 from lifttrack.comvis.tensor import MoveNetInference, RoboflowInference
 from lifttrack.utils import draw_prediction
 
@@ -17,7 +18,7 @@ result_queue = Queue(maxsize=30)
 
 
 # TODO: Implement this function for `extract_features`
-def run_inference(frame):
+def run_inference(frame: Mat | ndarray):
     """Run both MoveNet and Roboflow inference"""
 
     # MoveNet inference
@@ -43,7 +44,7 @@ def run_inference(frame):
 
 
 # TODO: Create a `calculate_angle` and `calculate_distance` function
-def extract_features(self, annotation):
+def extract_features(annotation: dict[str, dict | list]):
     """Extract features from a single annotation"""
     if not isinstance(annotation, dict):
         print(f"Expected a dictionary for annotation, got {type(annotation)}: {annotation}")
@@ -55,23 +56,46 @@ def extract_features(self, annotation):
     if not keypoints:
         return np.zeros(9, dtype=np.float32)
 
-    elbow_angle = self.calculate_angle(keypoints.get('left_shoulder', [0, 0]), keypoints.get('left_elbow', [0, 0]),
-                                       keypoints.get('left_wrist', [0, 0]))
-    knee_angle = self.calculate_angle(keypoints.get('left_hip', [0, 0]), keypoints.get('left_knee', [0, 0]),
-                                      keypoints.get(' left_ankle', [0, 0]))
-    hip_angle = self.calculate_angle(keypoints.get('left_shoulder', [0, 0]), keypoints.get('left_hip', [0, 0]),
-                                     keypoints.get('left_knee', [0, 0]))
-    spine_vertical = self.calculate_angle(keypoints.get('left_shoulder', [0, 0]), keypoints.get('left_hip', [0, 0]),
-                                          [keypoints.get('left_hip', [0, 0])[0], 0])
+    def calculate_angle(p1, p2, p3):
+        vector1 = np.array([p1[0] - p2[0], p1[1] - p2[1]])
+        vector2 = np.array([p3[0] - p2[0], p3[1] - p2[1]])
+        if np.linalg.norm(vector1) == 0 or np.linalg.norm(vector2) == 0:
+            return 0.0
+        cos_angle = np.dot(vector1, vector2) / (np.linalg.norm(vector1) * np.linalg.norm(vector2))
+        return np.degrees(np.arccos(np.clip(cos_angle, -1.0, 1.0)))
+
+    def calculate_distance(p1, p2):
+        return np.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+
+    elbow_angle = calculate_angle(
+        p1=keypoints.get('left_shoulder', [0, 0]),
+        p2=keypoints.get('left_elbow', [0, 0]),
+        p3=keypoints.get('left_wrist', [0, 0])
+    )
+    knee_angle = calculate_angle(
+        p1=keypoints.get('left_hip', [0, 0]),
+        p2=keypoints.get('left_knee', [0, 0]),
+        p3=keypoints.get(' left_ankle', [0, 0])
+    )
+    hip_angle = calculate_angle(
+        p1=keypoints.get('left_shoulder', [0, 0]),
+        p2=keypoints.get('left_hip', [0, 0]),
+        p3=keypoints.get('left_knee', [0, 0])
+    )
+    spine_vertical = calculate_angle(
+        p1=keypoints.get('left_shoulder', [0, 0]),
+        p2=keypoints.get('left_hip', [0, 0]),
+        p3=[keypoints.get('left_hip', [0, 0])[0], 0]
+    )
 
     weight_position = next(
-        (self.calculate_distance([obj.get('x', 0), obj.get('y', 0)], keypoints.get('left_shoulder', [0, 0])) for obj
+        (calculate_distance([obj.get('x', 0), obj.get('y', 0)], keypoints.get('left_shoulder', [0, 0])) for obj
          in objects if obj.get('class') in ['barbell', 'dumbbell']), 0.0)
 
     shoulder_symmetry = abs(keypoints.get('left_shoulder', [0, 0])[1] - keypoints.get('right_shoulder', [0, 0])[1])
     stability = np.mean(
-        [self.calculate_distance(keypoints.get('left_shoulder', [0, 0]), keypoints.get('right_shoulder', [0, 0])),
-         self.calculate_distance(keypoints.get('left_hip', [0, 0]), keypoints.get('right_hip', [0, 0]))])
+        [calculate_distance(keypoints.get('left_shoulder', [0, 0]), keypoints.get('right_shoulder', [0, 0])),
+         calculate_distance(keypoints.get('left_hip', [0, 0]), keypoints.get('right_hip', [0, 0]))])
     bar_path_deviation = np.std(
         [pos.get('x', 0) for pos in objects if pos.get('class') in ['barbell', 'dumbbell']]) if objects else 0.0
 
@@ -90,15 +114,25 @@ def extract_features(self, annotation):
 
 # TODO: Implement `run_inference` and `extract_features` in this function
 # TODO: Implement 3D CNN inference from `Live.py`
-def websocket_process_frames(frame_data):
+def websocket_process_frames(frame_data: bytes | io.BytesIO):
     """
     Process a single frame for inference.
-    :param frame_data:
-    :return:
+
+    Args:
+        frame_data: Camera frame sent as a bytes.
+
+    Returns:
+        Annotated frame with inference results.
     """
     # Decode the frame data
-    np_frame = np.frombuffer(frame_data, np.uint8)
-    frame = cv2.imdecode(np_frame, cv2.IMREAD_COLOR)
+    np_frame = np.frombuffer(
+        buffer=frame_data,
+        dtype=np.uint8
+    )
+    frame = cv2.imdecode(
+        buf=np_frame,
+        flags=cv2.IMREAD_COLOR
+    )
 
     height, width, _ = frame.shape
 
@@ -108,18 +142,21 @@ def websocket_process_frames(frame_data):
     input_image = tf.cast(input_image, dtype=tf.int32)
 
     # Run inference
-    keypoints = movenet.run_keypoint_inference(input_image)
+    inference = run_inference(frame=input_image)
+
+    # Extract features
+    features = extract_features(annotation=inference)
 
     # Draw predictions
     annotated_frame = draw_prediction(
-        frame,
-        keypoints,
+        image=frame,
+        keypoints_with_scores=inference['keypoints'],
         output_image_height=height
     )
 
     print(annotated_frame)
 
-    return annotated_frame
+    return annotated_frame, features
 
 # def process_frames():
 #     while True:
