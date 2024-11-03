@@ -1,8 +1,13 @@
 *.ini
 ./idea
-/tests/
+
 __pycache__/
 
 .idea/
 
 model/
+tests/res/
+tests/graph_img_test.py
+tests/sampleAPI.py
+tests/secretkey.py
+logs/
