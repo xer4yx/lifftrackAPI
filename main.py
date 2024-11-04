@@ -3,9 +3,10 @@ from lifttrack.dbhandler.rtdbHelper import rtdb
 from lifttrack.models import User, Token, AppInfo, LoginForm
 from lifttrack.comvis import cv2, websocket_process_frames
 from lifttrack.auth import (create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_user, verify_password,
-                            get_password_hash)
+                            get_password_hash, validate_input)
 
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocketDisconnect
 from fastapi.security import OAuth2PasswordRequestForm
@@ -34,14 +35,20 @@ latest_frame = None
 @app.get("/")
 async def read_root():
     """Lifttrack API root endpoint."""
-    return {"msg": "Welcome to LiftTrack!"}
+    return JSONResponse(
+        content={"msg": "Welcome to LiftTrack!"},
+        status_code=status.HTTP_200_OK
+    )
 
 
 # API Endpoint [About App]
 @app.get("/app-info")
 async def get_app_info(appinfo: AppInfo):
     """Endpoint to get information about the app."""
-    return appinfo
+    return JSONResponse(
+        content=appinfo,
+        status_code=status.HTTP_200_OK
+    )
 
 
 # API Endpoint [Authentication Operations]
@@ -56,12 +63,21 @@ async def login(login_form: LoginForm):
     user_data = rtdb.get_data(login_form.username)
 
     if not user_data:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
 
     if not verify_password(login_form.password, user_data["password"]):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password"
+        )
 
-    return {"message": "Login successful", "success": True}
+    return JSONResponse(
+        content={"message": "Login successful", "success": True},
+        status_code=status.HTTP_201_CREATED
+    )
 
 
 @app.post("/token", response_model=Token)
@@ -86,7 +102,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     access_token = create_access_token(
         data={"sub": form_data.username}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return JSONResponse(
+        content={"access_token": access_token, "token_type": "bearer"},
+        status_code=status.HTTP_201_CREATED
+    )
 
 
 # API Endpoint [RTDB Operations]
@@ -98,11 +117,14 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
     Args:
         current_user: User model that contains user data.
     """
-    return current_user
+    return JSONResponse(
+        content=current_user,
+        status_code=status.HTTP_200_OK
+    )
 
 
 @app.put("/user/create")
-def create_user(user: User):
+def create_user(user: User = Depends(validate_input)):
     """
     Endpoint to create a new user in the Firebase Realtime Database.
 
@@ -125,19 +147,20 @@ def create_user(user: User):
 
         snapshot = rtdb.put_data(user_data)
         if snapshot is None:
-            return {
-                "status": 400,
-                "msg": "User not created"
-            }
+            return JSONResponse(
+                content={"msg": "User not created"},
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
 
-        return {
-            "status": 200,
-            "msg": "User created"
-        }
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except TypeError as te:
-        raise HTTPException(status_code=400, detail=str(te))
+        return JSONResponse(
+            content={"msg": "User created."},
+            status_code=status.HTTP_200_OK
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
 
 
 @app.get("/user/{username}")
