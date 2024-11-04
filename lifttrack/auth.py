@@ -15,8 +15,8 @@ ALGORITHM = config.get(section='Authentication', option='ALGORITHM')
 ACCESS_TOKEN_EXPIRE_MINUTES = int(config.get(section='Authentication', option='TTL'))
 
 hash_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated=["bcrypt"],
+    schemes=["bcrypt", "md5_crypt"],
+    deprecated=["md5_crypt"],
     bcrypt__default_rounds=20
 )
 

@@ -39,7 +39,7 @@ class MoveNetInference:
         """
         for _ in range(inference_count-1):
             inference = self.movenet(input)
-        keypoints = inference[config.get(section="TensorHub", option="output")]
+        keypoints = inference[config.get(section="TensorHub", option="inference")]
         # Reshape keypoints to [17, 3] format
         return keypoints  # Returns shape [17, 3]
 
