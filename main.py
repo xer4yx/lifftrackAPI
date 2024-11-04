@@ -35,20 +35,32 @@ latest_frame = None
 @app.get("/")
 async def read_root():
     """Lifttrack API root endpoint."""
-    return JSONResponse(
-        content={"msg": "Welcome to LiftTrack!"},
-        status_code=status.HTTP_200_OK
-    )
+    try:
+        return JSONResponse(
+            content={"msg": "Welcome to LiftTrack!"},
+            status_code=status.HTTP_200_OK
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
 
 
 # API Endpoint [About App]
 @app.get("/app-info")
 async def get_app_info(appinfo: AppInfo):
     """Endpoint to get information about the app."""
-    return JSONResponse(
-        content=appinfo,
-        status_code=status.HTTP_200_OK
-    )
+    try:
+        return JSONResponse(
+            content=appinfo,
+            status_code=status.HTTP_200_OK
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
 
 
 # API Endpoint [Authentication Operations]
@@ -60,24 +72,30 @@ async def login(login_form: LoginForm):
     Args:
         login_form: BaseModel that contains username and password.
     """
-    user_data = rtdb.get_data(login_form.username)
+    try:
+        user_data = rtdb.get_data(login_form.username)
 
-    if not user_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+        if user_data is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        if not verify_password(login_form.password, user_data["password"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username or password"
+            )
+
+        return JSONResponse(
+            content={"message": "Login successful", "success": True},
+            status_code=status.HTTP_201_CREATED
         )
-
-    if not verify_password(login_form.password, user_data["password"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
         )
-
-    return JSONResponse(
-        content={"message": "Login successful", "success": True},
-        status_code=status.HTTP_201_CREATED
-    )
 
 
 @app.post("/token", response_model=Token)
@@ -88,24 +106,30 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     Args:
         form_data: OAuth2PasswordRequestForm that contains username and password.
     """
-    user = get_user_data(
-        username=form_data.username,
-        data=form_data.password
-    )
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+    try:
+        user = get_user_data(
+            username=form_data.username,
+            data=form_data.password
         )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": form_data.username}, expires_delta=access_token_expires
-    )
-    return JSONResponse(
-        content={"access_token": access_token, "token_type": "bearer"},
-        status_code=status.HTTP_201_CREATED
-    )
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": form_data.username}, expires_delta=access_token_expires
+        )
+        return JSONResponse(
+            content={"access_token": access_token, "token_type": "bearer"},
+            status_code=status.HTTP_201_CREATED
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
 
 
 # API Endpoint [RTDB Operations]
@@ -117,10 +141,16 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
     Args:
         current_user: User model that contains user data.
     """
-    return JSONResponse(
-        content=current_user,
-        status_code=status.HTTP_200_OK
-    )
+    try:
+        return JSONResponse(
+            content=current_user,
+            status_code=status.HTTP_200_OK
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
 
 
 @app.put("/user/create")
@@ -147,9 +177,9 @@ def create_user(user: User = Depends(validate_input)):
 
         snapshot = rtdb.put_data(user_data)
         if snapshot is None:
-            return JSONResponse(
-                content={"msg": "User not created"},
-                status_code=status.HTTP_400_BAD_REQUEST
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User creation failed."
             )
 
         return JSONResponse(
@@ -176,14 +206,20 @@ async def get_user_data(username: str, data=None):
         user_data = rtdb.get_data(username, data)
 
         if user_data is None:
-            return {
-                "status": 404,
-                "msg": "User not found"
-            }
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found."
+            )
 
-        return user_data
-    except ValueError as ve:
-        raise HTTPException(status_code=404, detail=str(ve))
+        return JSONResponse(
+            content=user_data,
+            status_code=status.HTTP_200_OK
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
 
 
 @app.put("/user/{username}")
@@ -210,19 +246,22 @@ async def update_user_data(username: str, user: User):
         }
 
         snapshot = rtdb.update_data(username, user_data)
-        if snapshot is None:
-            return {
-                "status": 404,
-                "msg": "User not updated"
-            }
 
-        return {
-            "status": 200,
-            "msg": "User updated.",
-            "content": snapshot
-        }
-    except ValueError as ve:
-        raise HTTPException(status_code=404, detail=str(ve))
+        if snapshot is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User update failed."
+            )
+
+        return JSONResponse(
+            content={"msg": "User updated."},
+            status_code=status.HTTP_200_OK
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
 
 
 @app.put("/user/{username}/change-pass")
@@ -238,10 +277,10 @@ async def change_password(user: User):
         hashed_pass = rtdb.get_data(user.username, "password")
 
         if not verify_password(user.password, hashed_pass):
-            return {
-                "status": 401,
-                "msg": "Incorrect password."
-            }
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect password."
+            )
 
         user_data = {
             "id": user.id,
@@ -258,17 +297,20 @@ async def change_password(user: User):
 
         snapshot = rtdb.update_data(user.username, user_data)
         if snapshot is None:
-            return {
-                "status": 404,
-                "msg": "User not updated"
-            }
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password change failed."
+            )
 
-        return {
-            "status": 200,
-            "msg": "User updated."
-        }
-    except ValueError as ve:
-        raise HTTPException(status_code=404, detail=str(ve))
+        return JSONResponse(
+            content={"msg": "Password changed."},
+            status_code=status.HTTP_200_OK
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
 
 
 @app.delete("/user/{username}")
@@ -281,18 +323,21 @@ def delete_user(username: str):
     """
     try:
         deleted = rtdb.delete_data(username)
-        if not deleted:
-            return {
-                "status": 404,
-                "msg": "User not deleted"
-            }
+        if deleted is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User deletion failed."
+            )
 
-        return {
-            "status": 200,
-            "msg": "User deleted"
-        }
-    except ValueError as ve:
-        raise HTTPException(status_code=404, detail=str(ve))
+        return JSONResponse(
+            content={"msg": "User deleted."},
+            status_code=status.HTTP_200_OK
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
 
 
 # API Endpoint [Frame Operations]
@@ -310,6 +355,8 @@ async def websocket_inference(websocket: WebSocket):
     connection_open = True
     while connection_open:
         try:
+            # Expected format from client side is:
+            # {"type": "websocket.receive", "text": data}
             frame_data = await websocket.receive()
 
             frame_byte = base64.b64decode(frame_data["text"])
@@ -326,6 +373,9 @@ async def websocket_inference(websocket: WebSocket):
                 raise WebSocketDisconnect
 
             return_bytes = base64.b64decode(buffer.tobytes())
+
+            # Expected return to the client side is:
+            # {"type": "websocket.send", "bytes": data}
             await websocket.send_bytes(return_bytes)
         except WebSocketDisconnect:
             connection_open = False
