@@ -382,8 +382,11 @@ async def websocket_inference(websocket: WebSocket):
         except Exception as e:
             print(f"Error: {e}")
             connection_open = False
+        finally:
+            if connection_open:
+                connection_open = False
 
-    if connection_open:
+    if not connection_open:
         await websocket.close()
 
 
