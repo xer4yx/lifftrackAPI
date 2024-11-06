@@ -381,8 +381,7 @@ async def websocket_inference(websocket: WebSocket):
 
             # Expected return to the client side is:
             # {"type": "websocket.send", "bytes": data}
-            await websocket.send_json(data=return_data,
-                                      mode="binary")
+            print(await websocket.send_json(data=return_data, mode="binary"))
         except WebSocketDisconnect:
             connection_open = False
         except Exception as e:
