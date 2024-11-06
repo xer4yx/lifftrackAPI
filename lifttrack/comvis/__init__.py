@@ -7,11 +7,13 @@ import numpy as np
 from numpy import ndarray
 
 from lifttrack import cv2, Mat
+from lifttrack.comvis.Live import ExerciseFormAnalyzer, class_names
 from lifttrack.comvis.tensor import MoveNetInference, RoboflowInference
 from lifttrack.utils import draw_prediction
 
 movenet = MoveNetInference()
 roboflow = RoboflowInference()
+analyzer = ExerciseFormAnalyzer()
 
 frame_queue = Queue(maxsize=30)
 result_queue = Queue(maxsize=30)
@@ -125,14 +127,8 @@ def websocket_process_frames(frame_data: bytes | io.BytesIO):
         Annotated frame with inference results.
     """
     # Decode the frame data
-    np_frame = np.frombuffer(
-        buffer=frame_data,
-        dtype=np.uint8
-    )
-    frame = cv2.imdecode(
-        buf=np_frame,
-        flags=cv2.IMREAD_COLOR
-    )
+    np_frame = np.frombuffer(buffer=frame_data, dtype=np.uint8)
+    frame = cv2.imdecode(buf=np_frame, flags=cv2.IMREAD_COLOR)
 
     height, width, _ = frame.shape
 
@@ -147,6 +143,31 @@ def websocket_process_frames(frame_data: bytes | io.BytesIO):
     # Extract features
     features = extract_features(annotation=inference)
 
+    # Process frame for CNN
+    processed_frame = analyzer.process_frame_for_cnn(frame)
+
+    # Add frame and features to the buffer
+    analyzer.add_to_buffer(processed_frame, features)
+
+    # Run inference if buffer is full
+    prediction = None
+    if analyzer.buffer_index == 0:
+        frames, feature_data = analyzer.get_buffer_for_prediction()
+
+        # Ensure inputs match model's expected shapes
+        frames = tf.convert_to_tensor(frames, dtype=tf.float32)
+        feature_data = tf.convert_to_tensor(feature_data, dtype=tf.float32)
+
+        # Create a data dictionary with all required inputs
+        input_data = {
+            'input_layer_8': frames,  # Update this key to match your model's input layer name
+            'input_layer_9': feature_data  # Update this key to match your model's input layer name
+        }
+
+        # Make prediction
+        with tf.device('/CPU:0'):  # Force CPU execution for consistent behavior
+            prediction = analyzer.model.predict(input_data, verbose=0)
+
     # Draw predictions
     annotated_frame = draw_prediction(
         image=frame,
@@ -154,9 +175,16 @@ def websocket_process_frames(frame_data: bytes | io.BytesIO):
         output_image_height=height
     )
 
-    print(annotated_frame)
+    if prediction is None:
+        raise ValueError("No prediction.")
 
-    return annotated_frame, features
+    prediction_data = {
+        "prediction": prediction.tolist(),
+        "predicted_class": int(np.argmax(prediction[0])),
+        "class_name": class_names.get(int(np.argmax(prediction[0])), "Unknown")
+    }
+
+    return annotated_frame, prediction_data
 
 # def process_frames():
 #     while True:

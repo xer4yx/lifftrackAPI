@@ -113,7 +113,7 @@ class ExerciseFormAnalyzer:
                 break
 
             # Ensure frames directory exists
-            os.makedirs("frames", exist_ok=True)
+            os.makedirs("../../frames", exist_ok=True)
             frame_path = f"frames/frame_{frame_count}.jpg"
             cv2.imwrite(frame_path, frame)
 
@@ -131,8 +131,3 @@ class ExerciseFormAnalyzer:
 
         cap.release()
         cv2.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    analyzer = ExerciseFormAnalyzer()
-    analyzer.run()

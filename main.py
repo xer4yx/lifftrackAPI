@@ -362,7 +362,7 @@ async def websocket_inference(websocket: WebSocket):
             frame_byte = base64.b64decode(frame_data["text"])
 
             # Process frame in thread pool to avoid blocking
-            (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
+            annotated_frame, prediction = await asyncio.get_event_loop().run_in_executor(
                 None, websocket_process_frames, frame_byte
             )
 
@@ -374,9 +374,14 @@ async def websocket_inference(websocket: WebSocket):
 
             return_bytes = base64.b64decode(buffer.tobytes())
 
+            return_data = {
+                "bytes": return_bytes,
+                "prediction": prediction
+            }
+
             # Expected return to the client side is:
             # {"type": "websocket.send", "bytes": data}
-            await websocket.send_bytes(return_bytes)
+            await websocket.send_json(data=return_data)
         except WebSocketDisconnect:
             connection_open = False
         except Exception as e:
