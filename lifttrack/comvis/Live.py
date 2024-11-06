@@ -1,4 +1,5 @@
 import os
+import time
 import cv2
 import tensorflow as tf
 import numpy as np
@@ -18,7 +19,11 @@ class_names = {
 class ExerciseFormAnalyzer:
     def __init__(self, model_path='model/exercise_model_20241031_153926.keras', input_shape=(112, 112),
                  max_video_length=30):
+        self.__start_time = time.time()
         self.model = tf.keras.models.load_model(model_path)
+        self.__end_time = time.time()
+        print(f"{self.__class__.__name__} model loaded in {self.__end_time - self.__start_time:.2f} seconds")
+
         self.input_shape = input_shape
         self.max_video_length = max_video_length
 
@@ -69,7 +74,7 @@ class ExerciseFormAnalyzer:
 
     def run_inference(self, frame):
         """Run CNN inference"""
-        # Process frame
+        # Process frames
         processed_frame = self.process_frame_for_cnn(frame)
 
         # Add to buffer

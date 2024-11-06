@@ -54,7 +54,7 @@ class RoboflowInference:
             api_key=config.get(section="Roboflow", option="api_key")
         )
         self.__end_time = time.time()
-        print(f"{self.__class__.__name__} model loaded in {self.__end_time - self.__start_time:.2f} seconds")
+        print(f"{self.__class__.__name__} connected to server.")
 
     def run_object_inference(self, frame):
         return self.roboflow_client.infer(

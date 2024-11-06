@@ -16,7 +16,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(config.get(section='Authentication', option='T
 
 hash_context = CryptContext(
     schemes=["bcrypt"],
-    deprecated=["bcrypt"],
+    deprecated="auto",
     bcrypt__default_rounds=20
 )
 
