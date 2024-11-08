@@ -359,10 +359,15 @@ async def websocket_inference(websocket: WebSocket):
             # {"type": "websocket.receive", "text": data}
             frame_data = await websocket.receive()
 
-            frame_byte = base64.b64decode(frame_data["text"])
+            if frame_data["type"] is "websocket.close":
+                connection_open = False
+                break
+
+            # frame_byte = base64.b64decode(frame_data["bytes"])
+            frame_byte = frame_data["bytes"]
 
             # Process frame in thread pool to avoid blocking
-            annotated_frame, prediction = await asyncio.get_event_loop().run_in_executor(
+            (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
                 None, websocket_process_frames, frame_byte
             )
 
@@ -374,21 +379,17 @@ async def websocket_inference(websocket: WebSocket):
 
             return_bytes = base64.b64decode(buffer.tobytes())
 
-            return_data = {
-                "bytes": return_bytes,
-                "prediction": prediction
-            }
-
             # Expected return to the client side is:
             # {"type": "websocket.send", "bytes": data}
-            print(await websocket.send_json(data=return_data, mode="binary"))
+            await websocket.send_bytes(return_bytes)
         except WebSocketDisconnect:
             connection_open = False
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error: {e}\nClass: {e.__class__.__name__}\nCause: {e.__cause__}\n"
+                  f"Traceback: {e.__traceback__}")
             connection_open = False
 
-    if connection_open:
+    if not connection_open:
         await websocket.close()
 
 
