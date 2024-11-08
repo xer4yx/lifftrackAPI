@@ -35,9 +35,6 @@ class RTDBHelper:
             url=f'/users/{username}',
             name=data)
 
-        if snapshot is None:
-            raise ValueError('User doesn\'t exist!')
-
         return snapshot
 
     def update_data(self, username, user_data):

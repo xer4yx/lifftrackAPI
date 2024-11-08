@@ -1,7 +1,8 @@
 import os
-import cv2
-import tensorflow as tf
-import numpy as np
+import time
+
+from lifttrack import cv2, os, config
+from lifttrack.comvis import tf, np
 
 # Define a mapping of class indices to class names
 class_names = {
@@ -16,9 +17,13 @@ class_names = {
 
 
 class ExerciseFormAnalyzer:
-    def __init__(self, model_path='model/exercise_model_20241031_153926.keras', input_shape=(112, 112),
+    def __init__(self, model_path=config.get(section="CNN", option="path"), input_shape=(112, 112),
                  max_video_length=30):
+        self.__start_time = time.time()
         self.model = tf.keras.models.load_model(model_path)
+        self.__end_time = time.time()
+        print(f"{self.__class__.__name__} model loaded in {self.__end_time - self.__start_time:.2f} seconds")
+
         self.input_shape = input_shape
         self.max_video_length = max_video_length
 
@@ -69,7 +74,7 @@ class ExerciseFormAnalyzer:
 
     def run_inference(self, frame):
         """Run CNN inference"""
-        # Process frame
+        # Process frames
         processed_frame = self.process_frame_for_cnn(frame)
 
         # Add to buffer
@@ -113,7 +118,7 @@ class ExerciseFormAnalyzer:
                 break
 
             # Ensure frames directory exists
-            os.makedirs("frames", exist_ok=True)
+            os.makedirs("../../frames", exist_ok=True)
             frame_path = f"frames/frame_{frame_count}.jpg"
             cv2.imwrite(frame_path, frame)
 
@@ -131,8 +136,3 @@ class ExerciseFormAnalyzer:
 
         cap.release()
         cv2.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    analyzer = ExerciseFormAnalyzer()
-    analyzer.run()

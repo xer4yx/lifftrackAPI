@@ -7,11 +7,13 @@ import numpy as np
 from numpy import ndarray
 
 from lifttrack import cv2, Mat
+from lifttrack.comvis.Live import ExerciseFormAnalyzer, class_names
 from lifttrack.comvis.tensor import MoveNetInference, RoboflowInference
 from lifttrack.utils import draw_prediction
 
 movenet = MoveNetInference()
 roboflow = RoboflowInference()
+analyzer = ExerciseFormAnalyzer()
 
 frame_queue = Queue(maxsize=30)
 result_queue = Queue(maxsize=30)
@@ -124,39 +126,83 @@ def websocket_process_frames(frame_data: bytes | io.BytesIO):
     Returns:
         Annotated frame with inference results.
     """
-    # Decode the frame data
-    np_frame = np.frombuffer(
-        buffer=frame_data,
-        dtype=np.uint8
-    )
-    frame = cv2.imdecode(
-        buf=np_frame,
-        flags=cv2.IMREAD_COLOR
-    )
+    try:
+        # Convert bytes to numpy array
+        np_arr = np.frombuffer(frame_data, np.uint8)
+        
+        # Decode image
+        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        
+        if frame is None or frame.size == 0:
+            raise ValueError("Invalid image data or empty frame")
 
-    height, width, _ = frame.shape
+        height, width, _ = frame.shape
+        print(frame.shape)
 
-    # Prepare input for model
-    input_image = cv2.resize(frame, (192, 192))
-    input_image = tf.expand_dims(input_image, axis=0)
-    input_image = tf.cast(input_image, dtype=tf.int32)
+        # Prepare input for model (use the original frame, not resized yet)
+        input_image = tf.image.resize(
+            images=tf.expand_dims(frame, axis=0),
+            size=(192, 192)
+        )
+        input_image = tf.cast(input_image, dtype=tf.int32)
 
-    # Run inference
-    inference = run_inference(frame=input_image)
+        # Run inference
+        inference = run_inference(frame=frame)  # Use original frame for object detection
 
-    # Extract features
-    features = extract_features(annotation=inference)
+        # Extract features
+        features = extract_features(annotation=inference)
 
-    # Draw predictions
-    annotated_frame = draw_prediction(
-        image=frame,
-        keypoints_with_scores=inference['keypoints'],
-        output_image_height=height
-    )
+        # Process frame for CNN
+        processed_frame = analyzer.process_frame_for_cnn(input_image)
 
-    print(annotated_frame)
+        # Add frame and features to the buffer
+        analyzer.add_to_buffer(processed_frame, features)
 
-    return annotated_frame, features
+        # Run inference if buffer is full
+        prediction = None
+        if analyzer.buffer_index == 0:
+            frames, feature_data = analyzer.get_buffer_for_prediction()
+
+            # Ensure inputs match model's expected shapes
+            frames = tf.convert_to_tensor(frames, dtype=tf.float32)
+            feature_data = tf.convert_to_tensor(feature_data, dtype=tf.float32)
+
+            # Create a data dictionary with all required inputs
+            input_data = {
+                'input_layer_8': frames,  # Update this key to match your model's input layer name
+                'input_layer_9': feature_data  # Update this key to match your model's input layer name
+            }
+
+            # Make prediction
+            with tf.device('/CPU:0'):
+                prediction = analyzer.model.predict(input_data, verbose=0)
+
+        # Draw predictions
+        annotated_frame = draw_prediction(
+            image=frame,
+            keypoints_with_scores=inference['keypoints'],
+            output_image_height=height
+        )
+
+        if prediction is None:
+            prediction_data = {
+                "prediction": None,
+                "predicted_class": None,
+                "class_name": "Unknown"
+            }
+        else:
+            prediction_data = {
+                "prediction": prediction.tolist(),
+                "predicted_class": int(np.argmax(prediction[0])),
+                "class_name": class_names.get(int(np.argmax(prediction[0])), "Unknown")
+            }
+
+        print("Inference successful.")
+        return annotated_frame, prediction_data
+
+    except Exception as e:
+        print(f"Error processing frame: {str(e)}")
+        return None, None
 
 # def process_frames():
 #     while True:

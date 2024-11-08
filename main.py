@@ -359,7 +359,12 @@ async def websocket_inference(websocket: WebSocket):
             # {"type": "websocket.receive", "text": data}
             frame_data = await websocket.receive()
 
-            frame_byte = base64.b64decode(frame_data["text"])
+            if frame_data["type"] is "websocket.close":
+                connection_open = False
+                break
+
+            # frame_byte = base64.b64decode(frame_data["bytes"])
+            frame_byte = frame_data["bytes"]
 
             # Process frame in thread pool to avoid blocking
             (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
@@ -380,10 +385,11 @@ async def websocket_inference(websocket: WebSocket):
         except WebSocketDisconnect:
             connection_open = False
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error: {e}\nClass: {e.__class__.__name__}\nCause: {e.__cause__}\n"
+                  f"Traceback: {e.__traceback__}")
             connection_open = False
 
-    if connection_open:
+    if not connection_open:
         await websocket.close()
 
 
