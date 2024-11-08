@@ -175,6 +175,7 @@ def create_user(user: User = Depends(validate_input)):
             "isDeleted": user.isDeleted
         }
 
+        #FIXME: Database transaction works but throws status code 400
         snapshot = rtdb.put_data(user_data)
         if snapshot is None:
             raise HTTPException(
@@ -365,6 +366,9 @@ async def websocket_inference(websocket: WebSocket):
 
             # frame_byte = base64.b64decode(frame_data["bytes"])
             frame_byte = frame_data["bytes"]
+
+            if not isinstance(frame_byte, bytes):
+                websocket.close()
 
             # Process frame in thread pool to avoid blocking
             (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
