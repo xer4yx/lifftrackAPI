@@ -15,15 +15,15 @@ ALGORITHM = config.get(section='Authentication', option='ALGORITHM')
 ACCESS_TOKEN_EXPIRE_MINUTES = int(config.get(section='Authentication', option='TTL'))
 
 hash_context = CryptContext(
-    schemes=["bcrypt", "md5_crypt"],
-    deprecated=["md5_crypt"],
-    bcrypt__default_rounds=20
+    schemes=["bcrypt"],
+    deprecated="auto"
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 def validate_input(user: User):
+    """Validates user input and returns the validated user object."""
     password_pattern = r'^(?=.*[A-Z])(?=.*[0-9])(?=.*[@$])[\w@$]{8,12}$'
     mobileno_pattern = r'^(?:\+63\d{10}|09\d{9})$'
     email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
@@ -46,6 +46,16 @@ def validate_input(user: User):
             status_code=status.HTTP_406_NOT_ACCEPTABLE,
             detail="Invalid email address."
         )
+    
+    # Check if user already exists
+    existing_user = rtdb.get_data(user.username)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already exists."
+        )
+
+    return user  # Return the validated user object
 
 
 def verify_password(plain_password, hashed_password):
@@ -92,6 +102,3 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
-
-
-

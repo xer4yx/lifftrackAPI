@@ -7,11 +7,13 @@ import numpy as np
 from numpy import ndarray
 
 from lifttrack import cv2, Mat
+from lifttrack.comvis.Live import ExerciseFormAnalyzer, class_names
 from lifttrack.comvis.tensor import MoveNetInference, RoboflowInference
 from lifttrack.utils import draw_prediction
 
 movenet = MoveNetInference()
 roboflow = RoboflowInference()
+analyzer = ExerciseFormAnalyzer()
 
 frame_queue = Queue(maxsize=30)
 result_queue = Queue(maxsize=30)
@@ -20,11 +22,20 @@ result_queue = Queue(maxsize=30)
 # TODO: Implement this function for `extract_features`
 def run_inference(frame: Mat | ndarray):
     """Run both MoveNet and Roboflow inference"""
-
-    # MoveNet inference
-    # img = tf.image.resize_with_pad(tf.expand_dims(frame, axis=0), 192, 192)
-    # input_img = tf.cast(img, dtype=tf.int32)
-    keypoints = movenet.run_keypoint_inference(frame)
+    
+    # MoveNet inference - properly preprocess the frame
+    # First convert to float32 (0-255 range), then cast to int32
+    input_img = tf.cast(frame, dtype=tf.float32)
+    input_img = tf.expand_dims(input_img, axis=0)
+    input_img = tf.image.resize_with_pad(
+        input_img,
+        target_height=192,
+        target_width=192
+    )
+    input_img = tf.cast(input_img, dtype=tf.int32)
+    
+    # Run MoveNet inference
+    keypoints = movenet.run_keypoint_inference(input_img)
 
     # Roboflow inference
     try:
@@ -35,7 +46,7 @@ def run_inference(frame: Mat | ndarray):
 
     # Combine results
     frame_annotation = {
-        'keypoints': keypoints,
+        'keypoints': keypoints[0],  # Extract from batch dimension
         'objects': roboflow_results['predictions'],
         'image_info': roboflow_results['image']
     }
@@ -44,17 +55,34 @@ def run_inference(frame: Mat | ndarray):
 
 
 # TODO: Create a `calculate_angle` and `calculate_distance` function
-def extract_features(annotation: dict[str, dict | list]):
+def extract_features(annotation):
     """Extract features from a single annotation"""
     if not isinstance(annotation, dict):
         print(f"Expected a dictionary for annotation, got {type(annotation)}: {annotation}")
         return np.zeros(9, dtype=np.float32)
 
-    keypoints = annotation.get('keypoints', {})
-    objects = annotation.get('objects', [])
-
-    if not keypoints:
+    # Get keypoints tensor and convert to numpy
+    keypoints_tensor = annotation.get('keypoints')
+    if keypoints_tensor is None:
         return np.zeros(9, dtype=np.float32)
+    
+    # Convert tensor to numpy and create a dictionary mapping
+    # Take first element from batch dimension [0]
+    keypoints_array = keypoints_tensor.numpy()[0]  # Now shape is (17, 3) [y, x, confidence]
+    keypoint_mapping = {
+        'left_shoulder': keypoints_array[5],  # Indices based on MoveNet output
+        'right_shoulder': keypoints_array[6],
+        'left_elbow': keypoints_array[7],
+        'left_wrist': keypoints_array[9],
+        'left_hip': keypoints_array[11],
+        'right_hip': keypoints_array[12],
+        'left_knee': keypoints_array[13],
+        'left_ankle': keypoints_array[15]
+    }
+
+    # Convert the format to match what the rest of the function expects
+    keypoints = {k: [v[1], v[0]] for k, v in keypoint_mapping.items()}  # Swap x,y coordinates
+    objects = annotation.get('objects', [])
 
     def calculate_angle(p1, p2, p3):
         vector1 = np.array([p1[0] - p2[0], p1[1] - p2[1]])
@@ -100,7 +128,7 @@ def extract_features(annotation: dict[str, dict | list]):
         [pos.get('x', 0) for pos in objects if pos.get('class') in ['barbell', 'dumbbell']]) if objects else 0.0
 
     return np.array([
-        elbow_angle / 180.0,
+        elbow_angle / 180.00,
         knee_angle / 180.0,
         hip_angle / 180.0,
         spine_vertical / 90.0,
@@ -124,39 +152,90 @@ def websocket_process_frames(frame_data: bytes | io.BytesIO):
     Returns:
         Annotated frame with inference results.
     """
-    # Decode the frame data
-    np_frame = np.frombuffer(
-        buffer=frame_data,
-        dtype=np.uint8
-    )
-    frame = cv2.imdecode(
-        buf=np_frame,
-        flags=cv2.IMREAD_COLOR
-    )
+    try:
+        # Convert bytes to numpy array properly
+        np_arr = np.frombuffer(frame_data, np.uint8)
+        
+        # Decode image
+        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        
+        if frame is None or frame.size == 0:
+            raise ValueError("Invalid image data or empty frame")
 
-    height, width, _ = frame.shape
+        height, width, _ = frame.shape
+        print(frame.shape)
 
-    # Prepare input for model
-    input_image = cv2.resize(frame, (192, 192))
-    input_image = tf.expand_dims(input_image, axis=0)
-    input_image = tf.cast(input_image, dtype=tf.int32)
+        # Prepare input for model (use the original frame, not resized yet)
+        input_image = tf.image.resize(
+            images=tf.expand_dims(frame, axis=0),
+            size=(192, 192)
+        )
+        input_image = tf.cast(input_image, dtype=tf.int32)
+        print(input_image.shape)
 
-    # Run inference
-    inference = run_inference(frame=input_image)
+        # Run inference
+        inference = run_inference(frame=frame)  # Use original frame for object detection
+        print(inference)
 
-    # Extract features
-    features = extract_features(annotation=inference)
+        # Extract features
+        features = extract_features(annotation=inference)
+        print(features)
 
-    # Draw predictions
-    annotated_frame = draw_prediction(
-        image=frame,
-        keypoints_with_scores=inference['keypoints'],
-        output_image_height=height
-    )
+        # Process frame for CNN
+        processed_frame = analyzer.process_frame_for_cnn(input_image)
+        print(processed_frame.shape)
 
-    print(annotated_frame)
+        # Add frame and features to the buffer
+        analyzer.add_to_buffer(processed_frame, features)
+        print(analyzer.buffer_index)
 
-    return annotated_frame, features
+        # Run inference if buffer is full
+        prediction = None
+        if analyzer.buffer_index == 0:
+            frames, feature_data = analyzer.get_buffer_for_prediction()
+
+            # Ensure inputs match model's expected shapes
+            frames = tf.convert_to_tensor(frames, dtype=tf.float32)
+            feature_data = tf.convert_to_tensor(feature_data, dtype=tf.float32)
+
+            # Create a data dictionary with all required inputs
+            input_data = {
+                'input_layer_8': frames,  # Update this key to match your model's input layer name
+                'input_layer_9': feature_data  # Update this key to match your model's input layer name
+            }
+
+            # Make prediction
+            with tf.device('/CPU:0'):
+                prediction = analyzer.model.predict(input_data, verbose=0)
+                
+            print(prediction)
+
+        # Draw predictions
+        annotated_frame = draw_prediction(
+            image=frame,
+            keypoints_with_scores=inference['keypoints'],
+            output_image_height=height
+        )
+
+        if prediction is None:
+            prediction_data = {
+                "prediction": None,
+                "predicted_class": None,
+                "class_name": "Unknown"
+            }
+        else:
+            prediction_data = {
+                "prediction": prediction.tolist(),
+                "predicted_class": int(np.argmax(prediction[0])),
+                "class_name": class_names.get(int(np.argmax(prediction[0])), "Unknown")
+            }
+
+        print("Inference successful.")
+        return annotated_frame, prediction_data
+
+    except Exception as e:
+        print(f"Error processing frame: {str(e)}")
+        return None, None
 
 # def process_frames():
 #     while True:
