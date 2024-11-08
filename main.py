@@ -392,6 +392,9 @@ async def websocket_inference(websocket: WebSocket):
             print(f"Error: {e}\nClass: {e.__class__.__name__}\nCause: {e.__cause__}\n"
                   f"Traceback: {e.__traceback__}")
             connection_open = False
+        finally:
+            if connection_open:
+                connection_open = False
 
     if not connection_open:
         await websocket.close()
