@@ -16,17 +16,10 @@ import logging
 import os
 from PIL import Image
 import io
+from lifttrack.utils.logging_config import setup_logger
 
-# Set up logging
-logger = logging.getLogger("test_comvis")
-handler = logging.FileHandler(
-    filename=os.path.join(os.path.dirname(__file__), "..", "logs/test_modules.log"),
-    mode="a"
-)
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
+# Configure logging for test_comvis
+logger = setup_logger("test_comvis", "test_modules.log")
 
 class TestMoveNetInference(unittest.TestCase):
     @patch('lifttrack.comvis.tensor.hub.load')

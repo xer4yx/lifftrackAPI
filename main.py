@@ -26,19 +26,10 @@ from slowapi.util import get_remote_address
 
 import logging
 
+from lifttrack.utils.logging_config import setup_logger
+
 # Configure logging for main.py
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Create a file handler for main.log
-handler = logging.FileHandler('logs/lifttrack_main.log')
-
-# Define the logging format
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-
-# Add the handler to the logger
-logger.addHandler(handler)
+logger = setup_logger("main", "lifttrack_main.log")
 
 # Initialize FastAPI app
 app = FastAPI()

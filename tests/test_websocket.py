@@ -9,17 +9,10 @@ from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocket
 from unittest.mock import Mock, patch
 from main import app
+from lifttrack.utils.logging_config import setup_logger
 
-# Set up logging similar to test_cases_api
-logger = logging.getLogger("test_websocket")
-handler = logging.FileHandler(
-    filename=os.path.join(os.path.dirname(__file__), "..", "logs/test_cases.log"),
-    mode="a"
-)
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
+# Configure logging for test_websocket
+logger = setup_logger("test_websocket", "test_cases.log")
 
 
 class TestWebSocketEndpoint(TestCase):

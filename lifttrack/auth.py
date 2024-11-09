@@ -11,15 +11,11 @@ from fastapi.security import OAuth2PasswordBearer
 from lifttrack import config
 from lifttrack.dbhandler.rtdbHelper import rtdb
 from lifttrack.models import User, TokenData
+from lifttrack.utils.logging_config import setup_logger
 
 
-# Logging Configuration
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.FileHandler('lifttrack_auth.log')
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+# Configure logging for auth.py
+logger = setup_logger("auth", "lifttrack_auth.log")
 
 # Secret Configuration
 SECRET_KEY = config.get(section='Authentication', option='SECRET_KEY')
