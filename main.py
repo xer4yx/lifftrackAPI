@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # Create a file handler for main.log
-handler = logging.FileHandler('lifttrack_main.log')
+handler = logging.FileHandler('logs/lifttrack_main.log')
 
 # Define the logging format
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -148,7 +148,7 @@ async def login(login_form: LoginForm, request: Request):
 
         return JSONResponse(
             content={"message": "Login successful", "success": True},
-            status_code=status.HTTP_201_CREATED
+            status_code=status.HTTP_200_OK
         )
     except HTTPException as httpe:
         return JSONResponse(
