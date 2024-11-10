@@ -114,7 +114,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
     user_data = rtdb.get_data(username=token_data.username)
     if user_data is None:
         logger.warning(f"User not found for token: {username}")

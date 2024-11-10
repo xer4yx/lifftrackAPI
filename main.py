@@ -24,6 +24,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
+from routers.WebsocketRoutes import websocket_router
+
 import logging
 
 from lifttrack.utils.logging_config import setup_logger
@@ -33,6 +35,9 @@ logger = setup_logger("main", "lifttrack_main.log")
 
 # Initialize FastAPI app
 app = FastAPI()
+
+# Include the websocket router
+app.include_router(websocket_router)
 
 # Initialize Limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
