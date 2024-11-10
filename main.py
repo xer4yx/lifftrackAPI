@@ -24,6 +24,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
+from routers.WebsocketRoutes import websocket_router
+
 import logging
 
 from lifttrack.utils.logging_config import setup_logger
@@ -33,6 +35,9 @@ logger = setup_logger("main", "lifttrack_main.log")
 
 # Initialize FastAPI app
 app = FastAPI()
+
+# Include the websocket router
+app.include_router(websocket_router)
 
 # Initialize Limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
@@ -95,7 +100,7 @@ async def get_app_info(request: Request):
         appinfo = AppInfo()
         
         return JSONResponse(
-            content=appinfo.dict(),
+            content=appinfo,
             status_code=status.HTTP_200_OK
         )
     except HTTPException as httpe:
@@ -188,6 +193,31 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
         )
     except Exception as e:
         logger.exception(f"Error in login_for_access_token: {e}")
+        return JSONResponse(
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@app.post("/logout")
+@limiter.limit("10/minute")
+async def logout(request: Request, current_user: User = Depends(get_current_user)):
+    """
+    Endpoint to logout user and invalidate their token.
+    """
+    try:
+        # You might want to add the token to a blacklist here if implementing token revocation
+        return JSONResponse(
+            content={"msg": "Successfully logged out"},
+            status_code=status.HTTP_200_OK
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
+    except Exception as e:
+        logger.exception(f"Error in logout: {e}")
         return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
