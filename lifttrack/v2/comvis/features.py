@@ -1,5 +1,6 @@
 import numpy as np
 import math
+from lifttrack.v2.comvis.object_track import process_frames_and_get_annotations
 
 # Function to compute the angle between three points
 def calculate_angle(a, b, c):
@@ -134,3 +135,5 @@ def calculate_stability(keypoints, previous_keypoints):
             total_displacement += np.linalg.norm(curr_pos - prev_pos)
     
     return total_displacement
+
+

@@ -1,6 +1,7 @@
 import cv2
 import os
 from inference_sdk import InferenceHTTPClient
+from lifttrack.v2.comvis.Movenet import analyze_frame
 
 # Initialize the Roboflow Inference Client
 client = InferenceHTTPClient(
@@ -42,7 +43,7 @@ def draw_keypoints(frame, keypoints):
     return frame
 
 # Main function to process frames and retrieve annotations for both keypoints and objects
-def process_frames_and_get_annotations(frames_directory, analyze_frame_function):
+def process_frames_and_get_annotations(frames_directory, analyze_frame):
     annotations = []  # List to store the combined annotations
 
     # Walk through the frames directory
@@ -58,7 +59,7 @@ def process_frames_and_get_annotations(frames_directory, analyze_frame_function)
                     continue
 
                 # Analyze the frame to get annotated_frame and keypoints (from MoveNet)
-                annotated_frame, keypoints = analyze_frame_function(frame)
+                annotated_frame, keypoints = analyze_frame(frame)
 
                 # Draw keypoints on the frame
                 annotated_frame = draw_keypoints(annotated_frame, keypoints)
