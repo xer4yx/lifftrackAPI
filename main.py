@@ -206,8 +206,21 @@ async def read_users_me(request: Request, current_user: User = Depends(get_curre
         request: FastAPI Request object.
     """
     try:
+        # Convert User model to dictionary
+        user_dict = {
+            "id": current_user.id,
+            "fname": current_user.fname,
+            "lname": current_user.lname,
+            "username": current_user.username,
+            "phoneNum": current_user.phoneNum,
+            "email": current_user.email,
+            "password": current_user.password,
+            "pfp": current_user.pfp,
+            "isAuthenticated": current_user.isAuthenticated,
+            "isDeleted": current_user.isDeleted
+        }
         return JSONResponse(
-            content=current_user.dict(),
+            content=user_dict,
             status_code=status.HTTP_200_OK
         )
     except HTTPException as httpe:
