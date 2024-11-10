@@ -3,8 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import base64
 from io import BytesIO
-from lifttrack.v2.comvis.Live import predicted_class_name
-from lifttrack.v2.comvis.progress import analyze_annotations
+from lifttrack.v2.comvis.Live import predict_class
 import websocket
 
 # Function to display the keypoints on the frame
@@ -71,7 +70,8 @@ def img_to_base64(image):
 
 def frame_by_frame_analysis(annotations, final_annotated_frame, class_names, base_url):
     analysis_results = []
-    features = analyze_annotations(annotations)  # Use analyze_annotations to get the features
+    # Remove the analyze_annotations call and directly use the annotations parameter
+    features = annotations  
 
     for frame_index, feature in enumerate(features):
         frame_path = feature['frame_path']

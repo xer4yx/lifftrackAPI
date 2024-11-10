@@ -2,7 +2,8 @@ import numpy as np
 import cv2
 import asyncio
 import websockets
-from lifttrack.v2.comvis.features import extract_features_from_annotations
+# Remove the resize functions and import them from utils
+from lifttrack.v2.comvis.utils import resize_to_128x128, resize_to_192x192
 
 class_names = {
     0: "barbell_benchpress",

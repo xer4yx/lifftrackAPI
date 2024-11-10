@@ -24,7 +24,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-from routers.WebsocketRoutes import websocket_router
+from routers.WebsocketRoutes import router as websocket_router
 
 import logging
 
