@@ -1,15 +1,11 @@
 import logging
 from firebase import firebase
 from lifttrack import config
+from lifttrack.utils.logging_config import setup_logger
 
 
 # Logging Configuration
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.FileHandler('lifttrack_db.log')
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+logger = setup_logger("rtdbHelper", "lifttrack_db.log")
 
 
 class RTDBHelper:
