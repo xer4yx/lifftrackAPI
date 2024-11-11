@@ -4,6 +4,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import cv2
 import numpy as np
 import tensorflow as tf
+from lifttrack.utils.logging_config import setup_logger
 
 from lifttrack.v2.comvis.Live import (
     model,
@@ -13,6 +14,8 @@ from lifttrack.v2.comvis.Live import (
     provide_form_suggestions,
     prepare_frames_for_input,
 )
+
+logger = setup_logger("router", "lifttrack_websocket.log")
 
 from lifttrack.v2.comvis.Movenet import analyze_frame  # This handles 192x192 internally
 from lifttrack.v2.comvis.object_track import process_frames_and_get_annotations
@@ -26,12 +29,46 @@ router = APIRouter()
 @router.websocket("/v2/ws-tracking")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    
     frame_count = 0
     frames_buffer = []
+    max_frames = 1800  # Maximum number of frames to process (60 seconds at 30fps)
+    last_frame_time = asyncio.get_event_loop().time()
+    frame_timeout = 60.0  # 5 seconds timeout for receiving frames
     
     try:
-        while True:
-            data = await websocket.receive_bytes()
+        while frame_count < max_frames:
+            try:
+                # Add timeout for receiving frames
+                current_time = asyncio.get_event_loop().time()
+                if current_time - last_frame_time > frame_timeout:
+                    logger.info("Frame reception timeout - no frames received for 5 seconds")
+                    await websocket.send_json({
+                        'type': 'complete',
+                        'message': 'Session ended - no frames received for 5 seconds',
+                        'frame_count': frame_count
+                    })
+                    break
+
+                # Set timeout for receiving the next frame
+                data = await asyncio.wait_for(
+                    websocket.receive_bytes(),
+                    timeout=frame_timeout
+                )
+                last_frame_time = asyncio.get_event_loop().time()
+                
+            except asyncio.TimeoutError:
+                logger.info("Frame reception timeout")
+                await websocket.send_json({
+                    'type': 'complete',
+                    'message': 'Session ended - timeout',
+                    'frame_count': frame_count
+                })
+                break
+            except WebSocketDisconnect:
+                logger.info("Client disconnected")
+                break
+                
             np_arr = np.frombuffer(data, np.uint8)
             frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             
@@ -46,43 +83,75 @@ async def websocket_endpoint(websocket: WebSocket):
             # Add frame to buffer for analysis
             frames_buffer.append(frame)
             frame_count += 1
-
+            logger.info(f"Frame count: {frame_count}")
+            
             # Process analysis every 30th frame
             if frame_count % 30 == 0:
-                # 1. Get MoveNet and Roboflow inference
-                _, keypoints = analyze_frame(frame)
-                roboflow_results = process_frames_and_get_annotations(frame, analyze_frame)[0]
-                predictions = roboflow_results['predictions']
+                try:
+                    # 1. Get MoveNet and Roboflow inference
+                    _, keypoints = analyze_frame(frame)
+                    logger.info(f"Got MoveNet results")
+                    
+                    roboflow_results = process_frames_and_get_annotations(frame)
+                    logger.info(f"Got Roboflow results")
+                    
+                    if not roboflow_results:
+                        predictions = []
+                    else:
+                        predictions = roboflow_results.get('predictions', [])
 
-                # 2. Get predicted class from Live.py
-                predicted_class_name = predict_class(model, frames_buffer[-30:])
+                    # 2. Get predicted class
+                    predicted_class_name = predict_class(model, frames_buffer[-30:])
+                    logger.info(f"Got predicted class")
 
-                # 3. Extract features
-                features = {
-                    'joint_angles': extract_joint_angles(keypoints),
-                    'speeds': calculate_speed(extract_movement_patterns(keypoints, keypoints)),
-                    'body_alignment': extract_body_alignment(keypoints),
-                    'stability': calculate_stability(keypoints, keypoints),
-                    'object_detections': predictions
-                }
+                    # 3. Extract features
+                    features = {
+                        'joint_angles': extract_joint_angles(keypoints),
+                        'speeds': calculate_speed(extract_movement_patterns(keypoints, keypoints)),
+                        'body_alignment': extract_body_alignment(keypoints),
+                        'stability': calculate_stability(keypoints, keypoints),
+                        'object_detections': predictions
+                    }
 
-                # 4. Calculate accuracy and get suggestions
-                accuracy, suggestions = calculate_form_accuracy(features, predicted_class_name)
+                    # 4. Calculate accuracy and get suggestions
+                    accuracy, suggestions = calculate_form_accuracy(features, predicted_class_name)
+                    logger.info(f"Got form accuracy and suggestions")
 
-                # Send analysis results
-                await websocket.send_json({
-                    'type': 'analysis',
-                    'accuracy': accuracy,
-                    'suggestions': suggestions,
-                    'predicted_class': predicted_class_name
-                })
+                    # Send analysis results
+                    await websocket.send_json({
+                        'type': 'analysis',
+                        'accuracy': accuracy,
+                        'suggestions': suggestions,
+                        'predicted_class': predicted_class_name,
+                        'frame_count': frame_count,
+                        'max_frames': max_frames
+                    })
+                    logger.info(f"Sent analysis results")
+                    frames_buffer = []
+                    logger.info(f"Cleared buffer")
+                except Exception as e:
+                    logger.error(f"Error during analysis: {str(e)}")
+                    continue
 
-                # Clear buffer
-                frames_buffer = []
+        # Only send completion if we haven't disconnected
+        if not websocket.client_state.DISCONNECTED:
+            await websocket.send_json({
+                'type': 'complete',
+                'message': 'Session ended successfully',
+                'frame_count': frame_count,
+                'reason': 'max_frames_reached' if frame_count >= max_frames else 'timeout'
+            })
+            logger.info(f"Session ended with {frame_count} frames processed")
+            await websocket.close()
 
     except WebSocketDisconnect:
-        print("Client disconnected")
+        logger.info(f"Client disconnected after processing {frame_count} frames")
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"Error: {str(e)}")
         if not websocket.client_state.DISCONNECTED:
+            await websocket.send_json({
+                'type': 'error',
+                'message': str(e),
+                'frame_count': frame_count
+            })
             await websocket.close()
