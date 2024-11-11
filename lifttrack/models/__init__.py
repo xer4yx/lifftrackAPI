@@ -17,29 +17,6 @@ class User(BaseModel):
     isAuthenticated: bool = False
     isDeleted: bool = False
 
-    @validator('password')
-    def validate_password(cls, v):
-        password_pattern = r'^(?=.*[A-Z])(?=.*\d)(?=.*[@$])[A-Za-z\d@$]{8,12}$'
-        if not re.match(password_pattern, v):
-            raise ValueError(
-                "Password must be 8-12 characters long, with at least one uppercase letter, one digit, and one special character."
-            )
-        return v
-
-    @validator('phoneNum')
-    def validate_phone_num(cls, v):
-        mobileno_pattern = r'^(?:\+63\d{10}|09\d{9})$'
-        if not re.match(mobileno_pattern, v):
-            raise ValueError("Invalid mobile number.")
-        return v
-
-    @validator('email')
-    def validate_email(cls, v):
-        email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-        if not re.match(email_pattern, v):
-            raise ValueError("Invalid email address.")
-        return v
-
 
 class LoginForm(BaseModel):
     username: str

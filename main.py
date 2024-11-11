@@ -1,5 +1,3 @@
-from typing import Optional
-
 from lifttrack import timedelta, threading, asyncio, base64
 from lifttrack.dbhandler.rtdbHelper import rtdb
 from lifttrack.models import User, Token, AppInfo, LoginForm
@@ -12,6 +10,9 @@ from lifttrack.auth import (
     get_password_hash,
     validate_input
 )
+
+from typing import Optional
+from pydantic import ValidationError
 
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, Request
 from fastapi.responses import JSONResponse
@@ -296,6 +297,12 @@ async def create_user(request: Request, user: User = Depends(validate_input)):
         return JSONResponse(
             content={"msg": "User created."},
             status_code=status.HTTP_201_CREATED
+        )
+    except ValidationError as vale:
+        # Handle errors raised by Pydantic
+        return JSONResponse(
+            content={"msg": str(vale)},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
         )
     except ValueError as ve:
         # Handle errors raised by RTDBHelper
