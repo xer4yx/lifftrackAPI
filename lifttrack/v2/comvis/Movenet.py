@@ -51,7 +51,8 @@ def analyze_frame(frame):
     
     # MoveNet inference
     results = movenet(input_img)
-    keypoints = results['output_0'].numpy()[0, 0, :, :3]  # Extract keypoints
+    keypoints = results['output_0'].numpy()[0, 0, :, :3]
+    print(f"Keypoints: {keypoints}")  # Extract keypoints
 
     # Process keypoints for annotations
     shaped_keypoints = process_keypoints(keypoints, frame.shape)

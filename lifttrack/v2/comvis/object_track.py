@@ -15,7 +15,7 @@ model_version = 4
 
 # Function to draw bounding boxes on the frame with scaling
 def draw_bounding_boxes(frame, predictions, original_size):
-    original_height, original_width, _ = original_size
+    original_height, original_width, _ = original_size.shape
 
     for pred in predictions:
         x1, y1, x2, y2 = pred['x'], pred['y'], pred['x'] + pred['width'], pred['y'] + pred['height']
@@ -43,56 +43,13 @@ def draw_keypoints(frame, keypoints):
     return frame
 
 # Main function to process frames and retrieve annotations for both keypoints and objects
-def process_frames_and_get_annotations(frames_directory, analyze_frame):
-    annotations = []  # List to store the combined annotations
-    annotated_frame = None  # Initialize annotated_frame to avoid reference before assignment
-
-    # Walk through the frames directory
-    for root, dirs, files in os.walk(frames_directory):
-        for file in sorted(files):
-            if file.endswith('.jpg'):
-                frame_path = os.path.join(root, file)
-                print(f"Processing frame: {file}")
-                frame = cv2.imread(frame_path)
-
-                if frame is None:
-                    print(f"Error reading frame: {frame_path}")
-                    continue
-
-                # Analyze the frame to get annotated_frame and keypoints (from MoveNet)
-                try:
-                    annotated_frame, keypoints = analyze_frame(frame)
-                except Exception as e:
-                    print(f"Error analyzing frame {frame_path}: {e}")
-                    continue
-
-                # Draw keypoints on the frame
-                annotated_frame = draw_keypoints(annotated_frame, keypoints)
-
-                # Run Roboflow inference for object detection
-                try:
-                    roboflow_results = client.infer(frame_path, model_id=f"{project_id}/{model_version}")
-                except Exception as e:
-                    print(f"Error during RoboFlow inference for {frame_path}: {e}")
-                    continue
-
-                # Draw object annotations on the frame with bounding boxes
-                annotated_frame = draw_bounding_boxes(annotated_frame, roboflow_results['predictions'], frame.shape)
-
-                # Combine keypoints and object predictions
-                frame_info = {
-                    'frame_path': frame_path,
-                    'objects': roboflow_results['predictions'],  # Object detection results from Roboflow
-                    'keypoints': keypoints,                      # Keypoint data from MoveNet
-                    'image_info': roboflow_results['image']      # Additional image info from Roboflow
-                }
-
-                # Append the frame's combined annotation info to the annotations list
-                annotations.append(frame_info)
-
-                # Optionally display or save the annotated frame with both keypoints and objects drawn
-                # cv2.imshow("Annotated Frame", annotated_frame)
-                # cv2.waitKey(1)
-
-    # Return combined annotations and annotated frames
-    return annotations, annotated_frame 
+def process_frames_and_get_annotations(frame):
+    try:
+        # Run Roboflow inference for object detection
+        roboflow_results = client.infer(frame, model_id=f"{project_id}/{model_version}")  # Send the image directly
+        
+        return roboflow_results
+        
+    except Exception as e:
+        print(f"Error during object detection: {e}")
+        return None 

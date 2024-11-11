@@ -2,6 +2,8 @@ import numpy as np
 import cv2
 import asyncio
 import websockets
+import tensorflow as tf
+from lifttrack import config
 # Remove the resize functions and import them from utils
 from lifttrack.v2.comvis.utils import resize_to_128x128, resize_to_192x192
 from lifttrack.v2.comvis.analyze_features import analyze_annotations
@@ -13,38 +15,60 @@ class_names = {
     3: "shoulder_press",
 }
 
-def resize_to_128x128(input_array):
-    """Resize a given numpy array to 128x128."""
-    if isinstance(input_array, np.ndarray):
-        return cv2.resize(input_array, (128, 128))
-    else:
-        raise ValueError("Input must be a numpy array")
+model = tf.keras.models.load_model(config.get('CNN', 'path'), compile=False)  # Don't load optimizer    
 
-def resize_to_192x192(input_array):
-    """Resize a given numpy array to 192x192."""
-    if isinstance(input_array, np.ndarray):
-        return cv2.resize(input_array, (192, 192))
-    else:
-        raise ValueError("Input must be a numpy array")
 
 def prepare_frames_for_input(frame_list, num_frames=30):
+    """
+    Prepare frames for model input by resizing and stacking them.
+    
+    Args:
+        frame_list: List of frames to process
+        num_frames: Number of frames expected (default: 30)
+    
+    Returns:
+        numpy array with shape (num_frames, height, width, 3)
+    """
+    if len(frame_list) == 0 or not isinstance(frame_list[0], np.ndarray):
+        raise ValueError("frame_list must be a non-empty list of numpy arrays")
+
+    # Handle temporal dimension
     if len(frame_list) != num_frames:
-        # Adjust to only take the first num_frames if more are provided
         if len(frame_list) > num_frames:
             frame_list = frame_list[:num_frames]
         else:
-            raise ValueError(f"Expected {num_frames} frames, but got {len(frame_list)}")
+            last_frame = frame_list[-1]
+            padding = [last_frame] * (num_frames - len(frame_list))
+            frame_list = np.array(list(frame_list) + padding)  # Convert to numpy array after padding
     
-    frames_resized_128 = [resize_to_128x128(frame) for frame in frame_list]
-    frames_resized_192 = [resize_to_192x192(frame) for frame in frame_list]
+    frames_resized = []
+    for frame in frame_list:
+        # Convert grayscale to RGB if needed
+        if len(frame.shape) == 2:
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+        # Convert BGR to RGB if needed (OpenCV uses BGR by default)
+        elif frame.shape[-1] == 3 and not np.array_equal(frame[:,:,0], frame[:,:,2]):  # Check if BGR
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Handle other cases (like RGBA)
+        elif frame.shape[-1] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGB)
+            
+        # Resize to 128x128
+        frame_resized = resize_to_128x128(frame)
+        frames_resized.append(frame_resized)
     
-    frames_stack_128 = np.stack(frames_resized_128, axis=0)
-    frames_stack_192 = np.stack(frames_resized_192, axis=0)
+    # Stack frames
+    frames_stack = np.stack(frames_resized, axis=0)  # Shape: (num_frames, 128, 128, 3)
     
-    return frames_stack_128, frames_stack_192
+    # Verify final shape
+    expected_shape = (num_frames, 128, 128, 3)
+    if frames_stack.shape != expected_shape:
+        raise ValueError(f"Unexpected output dimensions. Expected {expected_shape}, got {frames_stack.shape}")
+    
+    return frames_stack
 
 def predict_class(model, frame_list):
-    frames_input, _ = prepare_frames_for_input(frame_list)
+    frames_input = prepare_frames_for_input(frame_list)  # Only one value to unpack
     frames_input_batch = np.expand_dims(frames_input, axis=0)
     predictions = model.predict(frames_input_batch)
     predicted_class_index = np.argmax(predictions, axis=1)[0]
@@ -121,20 +145,28 @@ async def analyze_frames(annotations):
     max_frames = 1800
     
     for frame_index, annotation in enumerate(annotations[:max_frames]):
-        if frame_index % 30 == 0:  # Still analyzing every 30th frame
-            predicted_class_name = class_names[annotation['predicted_class_index']]
-            
-            # Extract features from the annotation using analyze_features
-            features, _ = analyze_annotations([annotation])  # Call analyze_annotations to get features
-            
-            # Ensure features are structured correctly for provide_form_suggestions
-            suggestions = provide_form_suggestions(predicted_class_name, features[0])  # Pass the first feature set
-            
-            analysis_results.append({
-                'frame_index': frame_index,
-                'class_name': predicted_class_name,
-                'suggestions': suggestions
-            })
+        try:
+            if frame_index % 30 == 0:  # Still analyzing every 30th frame
+                predicted_class_index = annotation['predicted_class_index']
+                predicted_class_name = class_names.get(predicted_class_index)
+                
+                if predicted_class_name is None:
+                    raise ValueError(f"Invalid class index: {predicted_class_index}")
+                
+                # Extract features from the annotation using analyze_features
+                features, _ = analyze_annotations([annotation])
+                
+                # Ensure features are structured correctly for provide_form_suggestions
+                suggestions = provide_form_suggestions(predicted_class_name, features[0])
+                
+                analysis_results.append({
+                    'frame_index': frame_index,
+                    'class_name': predicted_class_name,
+                    'suggestions': suggestions
+                })
+        except Exception as e:
+            print(f"Error processing frame {frame_index}: {str(e)}")
+            continue
     
     return {
         'frames': analysis_results,
