@@ -1,4 +1,9 @@
+import psutil
+import threading
+import time
+
 from lifttrack import timedelta, threading, asyncio, base64
+from lifttrack.utils.logging_config import setup_logger
 from lifttrack.dbhandler.rtdbHelper import rtdb
 from lifttrack.models import User, Token, AppInfo, LoginForm
 from lifttrack.comvis import cv2, websocket_process_frames
@@ -14,10 +19,18 @@ from lifttrack.auth import (
 from typing import Optional
 from pydantic import ValidationError
 
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, Request
+from fastapi import (
+    FastAPI, 
+    Depends, 
+    HTTPException, 
+    status,
+    WebSocket, 
+    WebSocketDisconnect, 
+    Request
+)
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import WebSocketDisconnect
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -26,10 +39,6 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 from routers.WebsocketRoutes import router as websocket_router
-
-import logging
-
-from lifttrack.utils.logging_config import setup_logger
 
 # Configure logging for main.py
 logger = setup_logger("main", "lifttrack_main.log")
@@ -50,22 +59,38 @@ app.add_middleware(SlowAPIMiddleware)
 
 # CORS Configuration
 server_origin = [
+    'http://192.168.1.233',
     'http://localhost:8000',
+    'http://lifttrack.ondigitalocean.com',
+    'http://lifttrack.ondigitalocean.com:8000'
 ]
 
 server_method = ["PUT", "GET", "DELETE"]
 
 server_header = ["*"]
 
+# Modify CORS middleware to include additional security headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=server_origin,
     allow_methods=server_method,
-    allow_headers=server_header
+    allow_headers=server_header,
+    allow_credentials=True,  # Added for secure cookie handling
+    expose_headers=["*"]
 )
 
 latest_frame_lock = threading.Lock()
 latest_frame = None
+
+def log_resources(interval=5):
+    while True:
+        cpu_usage = psutil.cpu_percent()
+        memory_info = psutil.virtual_memory()
+        logger.info(f"CPU Usage: {cpu_usage}% | Memory Usage: {memory_info.percent}%")
+        time.sleep(interval)
+
+resource_thread = threading.Thread(target=log_resources, args=(30,), daemon=True)
+resource_thread.start()
 
 
 # API Endpoint [ROOT]
