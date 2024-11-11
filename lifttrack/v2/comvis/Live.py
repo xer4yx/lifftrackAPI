@@ -4,15 +4,13 @@ import asyncio
 import websockets
 # Remove the resize functions and import them from utils
 from lifttrack.v2.comvis.utils import resize_to_128x128, resize_to_192x192
+from lifttrack.v2.comvis.analyze_features import analyze_annotations
 
 class_names = {
-    0: "barbell_benchpress",
-    1: "barbell_deadlift",
-    2: "barbell_rdl",
-    3: "barbell_shoulderpress",
-    4: "dumbbell_benchpress",
-    5: "dumbbell_deadlift",
-    6: "dumbbell_shoulderpress",
+    0: "benchpress",
+    1: "deadlift",
+    2: "romanian_deadlift",
+    3: "shoulder_press",
 }
 
 def resize_to_128x128(input_array):
@@ -31,7 +29,11 @@ def resize_to_192x192(input_array):
 
 def prepare_frames_for_input(frame_list, num_frames=30):
     if len(frame_list) != num_frames:
-        raise ValueError(f"Expected {num_frames} frames, but got {len(frame_list)}")
+        # Adjust to only take the first num_frames if more are provided
+        if len(frame_list) > num_frames:
+            frame_list = frame_list[:num_frames]
+        else:
+            raise ValueError(f"Expected {num_frames} frames, but got {len(frame_list)}")
     
     frames_resized_128 = [resize_to_128x128(frame) for frame in frame_list]
     frames_resized_192 = [resize_to_192x192(frame) for frame in frame_list]
@@ -54,82 +56,62 @@ def provide_form_suggestions(predicted_class_name, features):
     
     Args:
     - predicted_class_name: The predicted class name for the current frame.
-    - features: A dictionary containing extracted features (angles, movement, speed, alignment, stability).
+    - features: A dictionary containing extracted features (joint_angles, movement_patterns, speeds, etc.).
     
     Returns:
     - suggestions: A string containing suggestions for form improvement.
     """
     suggestions = []
 
-    # Analyze features based on predicted class
-    if predicted_class_name == "barbell_benchpress":
-        angles = features['angles']
-        alignment = features['alignment']
-        
-        # Check for shoulder alignment and elbow positioning
-        if angles.get('left_shoulder_left_elbow_left_wrist') > 45:  # Example threshold
+    # Get features with proper keys and default values
+    joint_angles = features.get('joint_angles', {})
+    body_alignment = features.get('body_alignment', {})
+    movement_patterns = features.get('movement_patterns', {})
+    speeds = features.get('speeds', {})
+    stability = features.get('stability', 0.0)
+
+    
+    if predicted_class_name == "benchpress":
+        if joint_angles.get('left_shoulder_left_elbow_left_wrist') is not None and \
+           joint_angles.get('left_shoulder_left_elbow_left_wrist') > 45:
             suggestions.append("Keep your elbows tucked at a 45-degree angle to protect your shoulders.")
         
-        if alignment:
-            shoulder_angle, _ = alignment
-            if shoulder_angle > 10:  # Example threshold for shoulder alignment
-                suggestions.append("Ensure your shoulders are level during the lift.")
+        if body_alignment.get('shoulder_angle') is not None and \
+           body_alignment.get('shoulder_angle') > 10:
+            suggestions.append("Ensure your shoulders are level during the lift.")
         
-        # Check stability
-        if features['stability'] > 0.1:  # Example threshold for stability
+        if stability > 0.1:
             suggestions.append("Maintain a stable base to enhance your lift.")
 
-    elif predicted_class_name == "barbell_deadlift":
-        angles = features['angles']
-        stability = features['stability']
-        
-        if stability > 0.1:  # Example threshold for stability
+    elif predicted_class_name == "deadlift":
+        if stability > 0.1:
             suggestions.append("Focus on maintaining a stable position throughout the lift.")
         
-        if angles.get('left_hip_left_knee_left_ankle') < 170:  # Example threshold for hip angle
+        if joint_angles.get('left_hip_left_knee_left_ankle') is not None and \
+           joint_angles.get('left_hip_left_knee_left_ankle') < 170:
             suggestions.append("Keep your hips lower than your shoulders to maintain proper form.")
         
-        # Speed check
-        speed = features['speed']
-        if speed.get('left_hip') > 2.0:  # Example speed threshold
+        if speeds.get('left_hip', 0.0) > 2.0:
             suggestions.append("Control your speed to avoid injury.")
 
-    elif predicted_class_name == "barbell_rdl":
-        # Implement checks specific to Romanian deadlift
-        if angles.get('left_hip_left_knee_left_ankle') < 160:  # Example threshold
+    elif predicted_class_name == "romanian_deadlift":
+        if joint_angles.get('left_hip_left_knee_left_ankle') is not None and \
+           joint_angles.get('left_hip_left_knee_left_ankle') < 160:
             suggestions.append("Ensure your back is flat and hinge at the hips.")
         
-        if features['stability'] > 0.1:
+        if stability > 0.1:
             suggestions.append("Maintain stability to prevent rounding your back.")
 
-    elif predicted_class_name == "barbell_shoulderpress":
-        # Implement checks specific to shoulder press
-        if features['speed'].get('left_shoulder') > 2.0:  # Example speed threshold
+    elif predicted_class_name == "shoulder_press":
+        if speeds.get('left_shoulder', 0.0) > 2.0:
             suggestions.append("Control the speed of your lift to avoid injury.")
         
-        if angles.get('left_shoulder_left_elbow_left_wrist') > 90:  # Example threshold
+        if joint_angles.get('left_shoulder_left_elbow_left_wrist') is not None and \
+           joint_angles.get('left_shoulder_left_elbow_left_wrist') > 90:
             suggestions.append("Keep your wrists straight and elbows aligned.")
-
-    elif predicted_class_name == "dumbbell_benchpress":
-        # Implement checks specific to dumbbell bench press
-        if angles.get('left_shoulder_left_elbow_left_wrist') > 45:  # Example threshold
-            suggestions.append("Ensure your wrists are straight and elbows are at a 45-degree angle.")
         
-        if features['stability'] > 0.1:
-            suggestions.append("Maintain stability to enhance your lift.")
-
-    elif predicted_class_name == "dumbbell_deadlift":
-        # Implement checks specific to dumbbell deadlift
-        if features['alignment'] and features['alignment'][1] > 10:  # Example threshold
-            suggestions.append("Keep your back straight and chest up throughout the lift.")
-        
-        if features['stability'] > 0.1:
-            suggestions.append("Focus on stability to prevent injury.")
-
-    elif predicted_class_name == "dumbbell_shoulderpress":
-        # Implement checks specific to dumbbell shoulder press
-        if features['stability'] > 0.1:  # Example threshold
-            suggestions.append("Maintain a stable base and avoid arching your back.")
+        if stability > 0.1:
+            suggestions.append("Maintain a stable core throughout the movement.")
 
     return "\n".join(suggestions)
 
@@ -141,8 +123,12 @@ async def analyze_frames(annotations):
     for frame_index, annotation in enumerate(annotations[:max_frames]):
         if frame_index % 30 == 0:  # Still analyzing every 30th frame
             predicted_class_name = class_names[annotation['predicted_class_index']]
-            features = extract_features_from_annotations([annotation])[0]
-            suggestions = provide_form_suggestions(predicted_class_name, features)
+            
+            # Extract features from the annotation using analyze_features
+            features, _ = analyze_annotations([annotation])  # Call analyze_annotations to get features
+            
+            # Ensure features are structured correctly for provide_form_suggestions
+            suggestions = provide_form_suggestions(predicted_class_name, features[0])  # Pass the first feature set
             
             analysis_results.append({
                 'frame_index': frame_index,

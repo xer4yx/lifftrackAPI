@@ -9,6 +9,7 @@ from lifttrack.v2.comvis.Live import (
     resize_to_128x128,
     predict_class,
     provide_form_suggestions,
+    prepare_frames_for_input,
 )
 from lifttrack.v2.comvis.Movenet import analyze_frame  # This handles 192x192 internally
 from lifttrack.v2.comvis.object_track import process_frames_and_get_annotations
@@ -20,6 +21,8 @@ from lifttrack import config
 router = APIRouter()
 
 # Load the Live.py model once when the router starts
+model = tf.keras.models.load_model(config.get('CNN', 'path'))
+
 @router.websocket("/v2/ws-tracking")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -28,14 +31,11 @@ async def websocket_endpoint(websocket: WebSocket):
     frames_buffer_128 = []  # For Live.py predictions
     previous_keypoints = None
     class_names = {
-        0: "barbell_benchpress",
-        1: "barbell_deadlift",
-        2: "barbell_rdl",
-        3: "barbell_shoulderpress", 
-        4: "dumbbell_benchpress",  
-        5: "dumbbell_deadlift",
-        6: "dumbbell_shoulderpress", 
-    }
+        0: "benchpress",
+        1: "deadlift",
+        2: "romanian_deadlift",
+        3: "shoulder_press",
+}
 
     try:
         while True:
@@ -51,13 +51,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Pipeline 1: Live.py (128x128) for exercise classification
                 frame_128 = resize_to_128x128(original_frame)
                 frames_buffer_128.append(frame_128)
+
+                current_prediction = None
                 
                 # Ensure that you are only processing the correct number of frames
                 if len(frames_buffer_128) >= buffer_size:
+                    # Prepare frames for input
+                    frames_input_128, frames_input_192 = prepare_frames_for_input(frames_buffer_128[:buffer_size])
                     # Process the frames
                     predicted_class = predict_class(model, frames_buffer_128)
                     current_prediction = class_names[predicted_class]
-                    frames_buffer_128 = []  # Clear buffer after prediction
+                    frames_buffer_128 = frames_buffer_128[buffer_size:]  # Clear buffer after prediction
 
                 # Pipeline 2: MoveNet (192x192) for pose estimation and analysis
                 annotated_frame, keypoints = analyze_frame(original_frame)  # Handles 192x192 resize internally
@@ -81,7 +85,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Object detection and feature analysis
                 frame_path = f"temp_frame_{len(features_buffer)}.jpg"
                 cv2.imwrite(frame_path, original_frame)
-                annotations, annotated_frame = process_frames_and_get_annotations([frame_path], analyze_frame)
+                annotations, annotated_frame = process_frames_and_get_annotations(frame_path, analyze_frame)
                 
                 # Add to features buffer
                 features_buffer.append({
@@ -127,6 +131,10 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception as e:
                 print(f"Error processing frame: {str(e)}")
                 await websocket.send_text(f"Error processing frame: {str(e)}")
+                # Reset all buffers when an error occurs
+                frames_buffer_128 = []
+                features_buffer = []
+                previous_keypoints = None
                 continue
 
     except Exception as e:
