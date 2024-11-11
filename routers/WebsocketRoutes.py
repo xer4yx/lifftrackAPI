@@ -1,25 +1,32 @@
 import asyncio
 import base64
 from fastapi import WebSocket, APIRouter
-from fastapi.responses import HTMLResponse
 import cv2
 import numpy as np
+import tensorflow as tf
 
-from lifttrack.v2.comvis.Live import resize_to_128x128
-from lifttrack.v2.comvis.Movenet import analyze_frame
+from lifttrack.v2.comvis.Live import (
+    resize_to_128x128,
+    predict_class,
+    provide_form_suggestions,
+)
+from lifttrack.v2.comvis.Movenet import analyze_frame  # This handles 192x192 internally
 from lifttrack.v2.comvis.object_track import process_frames_and_get_annotations
-from lifttrack.v2.comvis.features import extract_features_from_annotations
+from lifttrack.v2.comvis.features import extract_joint_angles, extract_movement_patterns, calculate_speed, extract_body_alignment, calculate_stability
 from lifttrack.v2.comvis.analyze_features import analyze_annotations
 from lifttrack.v2.comvis.progress import frame_by_frame_analysis
+from lifttrack import config
 
 router = APIRouter()
 
+# Load the Live.py model once when the router starts
 @router.websocket("/v2/ws-tracking")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     buffer_size = 30
-    message_buffer = []
     features_buffer = []
+    frames_buffer_128 = []  # For Live.py predictions
+    previous_keypoints = None
     class_names = {
         0: "barbell_benchpress",
         1: "barbell_deadlift",
@@ -32,70 +39,96 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            # Receive image bytes from the client
+            # Receive and decode image
             data = await websocket.receive_bytes()
-            
-            # Decode the image
             np_arr = np.frombuffer(data, np.uint8)
-            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            if frame is None:
+            original_frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            if original_frame is None:
                 await websocket.send_text("Failed to decode image.")
                 continue
 
-            # Step 1: Process with Live.py (resize to 128x128)
-            resized_128 = resize_to_128x128(frame)
-            # Perform inference (assuming a function `infer_live` exists)
-            # Replace `infer_live` with the actual inference function from Live.py
-            # live_prediction = infer_live(resized_128)
+            try:
+                # Pipeline 1: Live.py (128x128) for exercise classification
+                frame_128 = resize_to_128x128(original_frame)
+                frames_buffer_128.append(frame_128)
+                
+                # Ensure that you are only processing the correct number of frames
+                if len(frames_buffer_128) >= buffer_size:
+                    # Process the frames
+                    predicted_class = predict_class(model, frames_buffer_128)
+                    current_prediction = class_names[predicted_class]
+                    frames_buffer_128 = []  # Clear buffer after prediction
 
-            # Step 2: Process with Movenet.py (resize to 192x192)
-            annotated_frame, keypoints = analyze_frame(frame)
-            
-            # Step 3: Object Tracking using object_track.py
-            # Assuming `process_frames_and_get_annotations` processes single frames
-            # For single frame, wrap it in a list
-            annotations, _ = process_frames_and_get_annotations([annotated_frame], keypoints)
-            
-            if not annotations:
-                await websocket.send_text("No annotations found.")
-                continue
-            
-            # Step 4: Feature Extraction using features.py
-            # Assuming `extract_features_from_annotations` processes annotations
-            features, _ = extract_features_from_annotations(annotations)
-            
-            if not features:
-                await websocket.send_text("No features extracted.")
-                continue
-            
-            # Step 5: Analyze Features using analyze_features.py
-            analyzed_features, final_annotated_frame = analyze_annotations(features)
-            
-            if not analyzed_features:
-                await websocket.send_text("No analyzed features.")
-                continue
-            
-            # Step 6: Progress Handling using progress.py
-            # Assuming `frame_by_frame_analysis` processes features and returns suggestions
-            # Here, we accumulate the features_buffer
-            features_buffer.append(analyzed_features)
-            
-            # When buffer reaches 30 frames, process and send
-            if len(features_buffer) >= buffer_size:
-                # Flatten the list if necessary
-                all_features = [feature for sublist in features_buffer for feature in sublist]
+                # Pipeline 2: MoveNet (192x192) for pose estimation and analysis
+                annotated_frame, keypoints = analyze_frame(original_frame)  # Handles 192x192 resize internally
                 
-                # Perform progress analysis
-                suggestions = frame_by_frame_analysis(all_features, final_annotated_frame, class_names, websocket)
+                # Extract features from pose
+                features = {
+                    'joint_angles': extract_joint_angles(keypoints),
+                    'body_alignment': extract_body_alignment(keypoints),
+                }
                 
-                # Clear the buffer
-                features_buffer = []
+                if previous_keypoints:
+                    movement_patterns = extract_movement_patterns(keypoints, previous_keypoints)
+                    features.update({
+                        'movement_patterns': movement_patterns,
+                        'speeds': calculate_speed(movement_patterns),
+                        'stability': calculate_stability(keypoints, previous_keypoints)
+                    })
                 
-                # Send the suggestions back to the client
-                await websocket.send_json({
-                    'suggestions': suggestions
+                previous_keypoints = keypoints
+                
+                # Object detection and feature analysis
+                frame_path = f"temp_frame_{len(features_buffer)}.jpg"
+                cv2.imwrite(frame_path, original_frame)
+                annotations, annotated_frame = process_frames_and_get_annotations([frame_path], analyze_frame)
+                
+                # Add to features buffer
+                features_buffer.append({
+                    'features': features,
+                    'annotations': annotations[0] if annotations else None,
+                    'frame': annotated_frame,
+                    'prediction': current_prediction  # Include current prediction if available
                 })
 
+                # Process complete buffer
+                if len(features_buffer) >= buffer_size:
+                    # Analyze features
+                    analyzed_features, final_frame = analyze_annotations(features_buffer[:buffer_size])  # Use only the first 30 frames
+                    features_buffer = features_buffer[buffer_size:]  # Clear processed frames from the buffer
+                    
+                    # Get form suggestions if we have a prediction
+                    form_suggestions = []
+                    if current_prediction:
+                        form_suggestions = provide_form_suggestions(
+                            current_prediction,
+                            analyzed_features
+                        )
+                    
+                    # Get progress analysis
+                    progress_suggestions = frame_by_frame_analysis(
+                        analyzed_features,
+                        final_frame,
+                        class_names,
+                        websocket.url_for_path("/")
+                    )
+                    
+                    # Send combined results
+                    await websocket.send_json({
+                        'predicted_class': current_prediction,
+                        'form_suggestions': form_suggestions,
+                        'progress_suggestions': progress_suggestions,
+                        'frame_count': len(features_buffer)
+                    })
+                    
+                    # Clear buffers
+                    features_buffer = []
+
+            except Exception as e:
+                print(f"Error processing frame: {str(e)}")
+                await websocket.send_text(f"Error processing frame: {str(e)}")
+                continue
+
     except Exception as e:
-        await websocket.close()
         print(f"WebSocket connection closed: {e}")
+        await websocket.close()
