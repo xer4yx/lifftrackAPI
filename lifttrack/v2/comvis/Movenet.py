@@ -1,8 +1,9 @@
+
 import cv2
 import tensorflow as tf
 import tensorflow_hub as hub
 import numpy as np
-from Live import resize_to_192x192  # Import your resize function
+from lifttrack.v2.comvis.utils import resize_to_192x192
 
 # Load the MoveNet model
 movenet_model = hub.load('https://tfhub.dev/google/movenet/singlepose/lightning/4')

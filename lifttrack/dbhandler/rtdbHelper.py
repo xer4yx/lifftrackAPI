@@ -23,6 +23,7 @@ class RTDBHelper:
         Adds a new user to the database via HTTP PUT request.
         """
         try:
+            logger.debug(f"Attempting to create user with data: {user_data}")
             snapshot = self.__db.put(
                 url='/users',
                 name=user_data['username'],

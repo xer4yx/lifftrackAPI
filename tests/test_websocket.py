@@ -155,7 +155,7 @@ class TestWebSocketEndpoint(TestCase):
                     await websocket.send_json(data)
                     logger.debug(f"Frame {i+1} sent to websocket")
                     
-                    response = await websocket.receive_bytes()
+                    response = await websocket.receive_bytes() 
                     logger.debug(f"Response {i+1} received from websocket")
                     
                     self.assertIsNotNone(response)
