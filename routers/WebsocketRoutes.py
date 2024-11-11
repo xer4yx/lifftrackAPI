@@ -21,7 +21,7 @@ from lifttrack import config
 router = APIRouter()
 
 # Load the Live.py model once when the router starts
-model = tf.keras.models.load_model(config.get('CNN', 'path'))
+model = tf.keras.models.load_model(config.get('CNN', 'path'), compile=False)  # Don't load optimizer
 
 @router.websocket("/v2/ws-tracking")
 async def websocket_endpoint(websocket: WebSocket):
