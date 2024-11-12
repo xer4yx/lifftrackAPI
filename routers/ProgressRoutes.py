@@ -34,6 +34,16 @@ async def create_progress(
 ):
     """
     Endpoint to create or append exercise progress data.
+    
+    Parameters:
+    - username: The username of the user whose progress is being modified.
+    - exercise: The name of the exercise for which progress is being recorded.
+    - exercise_data: The data related to the exercise progress.
+    - request: The HTTP request object.
+    - current_user: The currently authenticated user.
+
+    Returns:
+    - JSONResponse indicating success or failure of the operation.
     """
     try:
         if username != current_user.username:
@@ -75,6 +85,15 @@ async def get_progress(
 ):
     """
     Endpoint to retrieve progress data.
+    
+    Parameters:
+    - username: The username of the user whose progress is being retrieved.
+    - request: The HTTP request object.
+    - exercise: Optional; the name of the exercise to filter progress data.
+    - current_user: The currently authenticated user.
+
+    Returns:
+    - JSONResponse containing the progress data or an error message.
     """
     try:
         if username != current_user.username:
@@ -116,6 +135,15 @@ async def delete_progress(
 ):
     """
     Endpoint to delete progress data.
+    
+    Parameters:
+    - username: The username of the user whose progress is being deleted.
+    - request: The HTTP request object.
+    - exercise: Optional; the name of the exercise to delete progress data for.
+    - current_user: The currently authenticated user.
+
+    Returns:
+    - JSONResponse indicating success or failure of the deletion operation.
     """
     try:
         if username != current_user.username:

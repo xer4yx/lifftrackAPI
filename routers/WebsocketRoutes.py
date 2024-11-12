@@ -1,10 +1,14 @@
 import asyncio
 import base64
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import json
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Request
+from lifttrack.auth import get_current_user  # Import the get_current_user function
+from lifttrack.dbhandler.rtdbHelper import rtdb  # Import your RTDBHelper instance
 import cv2
 import numpy as np
 import tensorflow as tf
 from lifttrack.utils.logging_config import setup_logger
+from lifttrack.models import User
 
 from lifttrack.v2.comvis.Live import (
     model,
@@ -23,12 +27,22 @@ from lifttrack.v2.comvis.features import extract_joint_angles, extract_movement_
 from lifttrack.v2.comvis.analyze_features import analyze_annotations
 from lifttrack.v2.comvis.progress import calculate_form_accuracy
 from lifttrack import config
+from lifttrack.dbhandler.rtdbHelper import rtdb  # Import your Firebase DB handler
 
 router = APIRouter()
 
 @router.websocket("/v2/ws-tracking")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, current_user: User = Depends(get_current_user), request: Request):
     await websocket.accept()
+    
+    username = current_user.username
+
+    # Example of using RTDBHelper to get user progress
+    user_progress = rtdb.get_progress(username)
+    if user_progress:
+        logger.info(f"Retrieved progress for user {username}: {user_progress}")
+    else:
+        logger.warning(f"No progress data found for user {username}")
     
     frame_count = 0
     frames_buffer = []
@@ -55,6 +69,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     websocket.receive_bytes(),
                     timeout=frame_timeout
                 )
+                
+                # Decode the received bytes to a string and parse as JSON
+                decoded_data = data.decode('utf-8')  # Decode bytes to string
+                json_data = json.loads(decoded_data)  # Parse string as JSON
+                exercise = json_data.get('exercise')  # Access the 'exercise' field
+                current_date = json_data.get('date')  # Access the 'date' field
+                
+                logger.info(f"Received exercise: {exercise}, date: {current_date}")
+
                 last_frame_time = asyncio.get_event_loop().time()
                 
             except asyncio.TimeoutError:
@@ -71,7 +94,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 
             np_arr = np.frombuffer(data, np.uint8)
             frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            
+
+        
             # Immediately send back the original frame bytes
             _, buffer = cv2.imencode('.jpg', frame)
             frame_bytes = base64.b64encode(buffer).decode('utf-8')
@@ -116,6 +140,24 @@ async def websocket_endpoint(websocket: WebSocket):
                     # 4. Calculate accuracy and get suggestions
                     accuracy, suggestions = calculate_form_accuracy(features, predicted_class_name)
                     logger.info(f"Got form accuracy and suggestions")
+
+                    # Construct the progress data
+                    progress_data = {
+                        "username": current_user.username,  # Assuming you have access to current_user
+                        "exercise": {
+                            "squat": [
+                                {
+                                    "date": current_date,  # Use the date from the received data
+                                    "suggestion": suggestions,  # Use the suggestions from analysis
+                                    "features": features,  # Use the extracted features
+                                    "frame": frame_bytes  # Use the frame bytes
+                                }
+                            ]
+                        }
+                    }
+
+                    # Send progress data to Firebase
+                    rtdb.put_progress(current_user.username, "squat", progress_data)  # Adjust as necessary
 
                     # Send analysis results
                     await websocket.send_json({
