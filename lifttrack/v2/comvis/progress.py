@@ -15,6 +15,7 @@ def display_keypoints_on_frame(frame, keypoints, threshold=0.5):
     return frame
 
 def calculate_form_accuracy(features, predicted_class_name):
+    print(f"Features: {features}")
     accuracy = 1.0
     suggestions = []
 
