@@ -1,6 +1,4 @@
-import psutil
 import threading
-import time
 
 from lifttrack import timedelta, threading, asyncio, base64
 from lifttrack.utils.logging_config import setup_logger
@@ -39,23 +37,20 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 from routers.WebsocketRoutes import router as websocket_router
-
-# Configure logging for main.py
-logger = setup_logger("main", "lifttrack_main.log")
+from routers.ProgressRoutes import router as progress_router
+from lifttrack.middlware.syslogger import log_network_io, log_cpu_and_mem_usage, start_resource_monitoring
 
 # Initialize FastAPI app
 app = FastAPI()
 
 # Include the websocket router
+app.include_router(progress_router)
 app.include_router(websocket_router)
 
 # Initialize Limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-# Add SlowAPI middleware
-app.add_middleware(SlowAPIMiddleware)
 
 # CORS Configuration
 server_origin = [
@@ -64,9 +59,7 @@ server_origin = [
     'http://lifttrack.ondigitalocean.com',
     'http://lifttrack.ondigitalocean.com:8000'
 ]
-
 server_method = ["PUT", "GET", "DELETE"]
-
 server_header = ["*"]
 
 # Modify CORS middleware to include additional security headers
@@ -78,20 +71,20 @@ app.add_middleware(
     allow_credentials=True,  # Added for secure cookie handling
     expose_headers=["*"]
 )
-
+# Add SlowAPI middleware
+app.add_middleware(SlowAPIMiddleware)
 latest_frame_lock = threading.Lock()
 latest_frame = None
 
-def log_resources(interval=5):
-    while True:
-        cpu_usage = psutil.cpu_percent()
-        memory_info = psutil.virtual_memory()
-        logger.info(f"CPU Usage: {cpu_usage}% | Memory Usage: {memory_info.percent}%")
-        time.sleep(interval)
+# Initialize loggers
+# Configure logging for main.py
+logger = setup_logger("main", "lifttrack_main.log")
+cpu_mem_logger = setup_logger("cpu-mem", "server_resoruce.log")
+system_logger = setup_logger("system", "server_resource.log")
+network_logger = setup_logger("network", "server_resource.log")
 
-resource_thread = threading.Thread(target=log_resources, args=(30,), daemon=True)
-resource_thread.start()
-
+# Start resource monitoring
+start_resource_monitoring(system_logger, log_cpu_and_mem_usage, 20)
 
 # API Endpoint [ROOT]
 @app.get("/")
