@@ -2,6 +2,8 @@ import logging
 from firebase import firebase
 from lifttrack import config
 from lifttrack.utils.logging_config import setup_logger
+from typing import Dict, Optional
+from lifttrack.models import Progress, ExerciseData
 
 
 # Logging Configuration
@@ -101,6 +103,147 @@ class RTDBHelper:
             return deleted
         except Exception as e:
             logger.exception(f"Exception in delete_data for user {username}: {e}")
+            raise
+
+    def put_progress(self, username: str, exercise_name: str, exercise_data: ExerciseData):
+        """
+        Adds exercise progress data for a user. New data is appended under the date,
+        not updated.
+        
+        Args:
+            username: Username of the user
+            exercise_name: Name of the exercise
+            exercise_data: ExerciseData object containing the progress data
+        """
+        try:
+            # Get existing progress data or create new Progress model
+            existing_data = self.get_progress(username)
+            if not existing_data:
+                existing_data = Progress(
+                    username=username,
+                    exercise={}
+                ).model_dump()
+                
+            # Format date as mm/dd/YYYY for storage key
+            date_str = exercise_data.date.strftime("%m/%d/%Y")
+            
+            # Ensure the exercise and date structure exists
+            if exercise_name not in existing_data["exercise"]:
+                existing_data["exercise"][exercise_name] = {}
+            if date_str not in existing_data["exercise"][exercise_name]:
+                existing_data["exercise"][exercise_name][date_str] = []
+            
+            # Append the new exercise data while preserving the datetime in ISO format
+            exercise_data_dict = exercise_data.model_dump()
+            exercise_data_dict["date"] = exercise_data.date.isoformat()  # Store datetime in ISO format
+            existing_data["exercise"][exercise_name][date_str].append(exercise_data_dict)
+            
+            # Save to database
+            snapshot = self.__db.put(
+                url='/progress',
+                name=username,
+                data=existing_data
+            )
+            
+            if snapshot is None:
+                logger.error(f"Failed to save progress for user: {username}")
+                raise ValueError('Progress not saved')
+            logger.info(f"Progress saved successfully for user: {username}")
+            
+        except Exception as e:
+            logger.exception(f"Exception in put_progress for user {username}: {e}")
+            raise
+
+    def get_progress(self, username: str, exercise_name: Optional[str] = None) -> Optional[Dict]:
+        """
+        Retrieves progress data from the database.
+
+        Args:
+            username: Username of the user
+            exercise_name: Optional specific exercise to retrieve
+        Returns:
+            Progress data dictionary or None
+        """
+        try:
+            snapshot = self.__db.get(
+                url=f'/progress/{username}',
+                name=None
+            )
+            
+            if snapshot is None:
+                logger.warning(f"Progress data not found for user: {username}")
+                return None
+            
+            # Validate against Progress model
+            progress_data = Progress(**snapshot)
+            
+            if exercise_name:
+                if exercise_name in progress_data.exercise:
+                    return {"username": username, "exercise": {
+                        exercise_name: progress_data.exercise[exercise_name]
+                    }}
+                return None
+            
+            logger.info(f"Progress data retrieved for user: {username}")
+            return progress_data.model_dump()
+            
+        except Exception as e:
+            logger.exception(f"Exception in get_progress for user {username}: {e}")
+            raise
+
+    def update_progress(self, username: str, exercise_name: str, exercise_data: any):
+        """
+        Updates exercise progress data for a user.
+        
+        Args:
+            username: Username of the user
+            exercise_name: Name of the exercise
+            exercise_data: ExerciseData object containing the updated progress data
+        """
+        try:
+            return self.put_progress(username, exercise_name, exercise_data)
+        except Exception as e:
+            logger.exception(f"Exception in update_progress for user {username}: {e}")
+            raise
+
+    def delete_progress(self, username: str, exercise_name: Optional[str] = None):
+        """
+        Deletes progress data from the database.
+
+        Args:
+            username: Username of the user
+            exercise_name: Optional specific exercise to delete
+        Returns:
+            True if deleted, else False
+        """
+        try:
+            if exercise_name:
+                # Delete specific exercise
+                existing_data = self.get_progress(username)
+                if existing_data and "exercise" in existing_data:
+                    if exercise_name in existing_data["exercise"]:
+                        del existing_data["exercise"][exercise_name]
+                        snapshot = self.__db.put(
+                            url='/progress',
+                            name=username,
+                            data=existing_data
+                        )
+                        return snapshot is not None
+                return False
+            else:
+                # Delete all progress
+                deleted = self.__db.delete(
+                    url='/progress',
+                    name=username
+                )
+                if deleted is False:
+                    logger.error(f"Failed to delete progress for user: {username}")
+                else:
+                    logger.info(f"Progress deleted successfully for user: {username}")
+                return deleted
+                
+        except Exception as e:
+            logger.exception(f"Exception in delete_progress for user {username}: {e}")
             raise
 
 

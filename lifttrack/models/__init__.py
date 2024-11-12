@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
 
 from pydantic import BaseModel, validator
 
@@ -56,7 +56,22 @@ class Frame(BaseModel):
     image: bytes
 
 
-class FormOutput(BaseModel):
-    user: str
-    current_reps: int
-    num_errors: int
+class Features(BaseModel):
+    objects: str
+    joint_angles: Dict[str, Any]
+    movement_pattern: str
+    speeds: str
+    body_alignment: Any
+    stability: str
+
+
+class ExerciseData(BaseModel):
+    date: datetime
+    suggestion: str
+    features: Features
+    frame: str
+
+
+class Progress(BaseModel):
+    username: str
+    exercise: Dict[str, Dict[str, ExerciseData]]  # exercise name -> date -> exercise data
