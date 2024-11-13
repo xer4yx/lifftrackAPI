@@ -66,7 +66,7 @@ class Features(BaseModel):
 
 
 class ExerciseData(BaseModel):
-    date: datetime
+    date: datetime = datetime.datetime.now()
     suggestion: str
     features: Features
     frame: str
