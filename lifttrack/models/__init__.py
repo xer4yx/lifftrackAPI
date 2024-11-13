@@ -58,20 +58,25 @@ class Frame(BaseModel):
 
 class Features(BaseModel):
     objects: str
-    joint_angles: Dict[str, Any]
     movement_pattern: str
-    speeds: str
     body_alignment: Any
     stability: str
 
 
 class ExerciseData(BaseModel):
-    date: datetime
+    date: str = datetime.now().isoformat()
     suggestion: str
     features: Features
     frame: str
+
+    @validator('date', pre=True, always=True)
+    def validate_date(cls, v):
+        if isinstance(v, str):
+            return v
+        return datetime.now().isoformat()
 
 
 class Progress(BaseModel):
     username: str
     exercise: Dict[str, Dict[str, ExerciseData]]  # exercise name -> date -> exercise data
+ 

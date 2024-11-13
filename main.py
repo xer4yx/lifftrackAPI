@@ -69,7 +69,8 @@ app.add_middleware(
     allow_methods=server_method,
     allow_headers=server_header,
     allow_credentials=True,  # Added for secure cookie handling
-    expose_headers=["*"]
+    expose_headers=["*"],
+    allow_origin_regex="http://.*"  # Allow all subdomains
 )
 # Add SlowAPI middleware
 app.add_middleware(SlowAPIMiddleware)

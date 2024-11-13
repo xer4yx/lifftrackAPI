@@ -20,6 +20,12 @@ class RTDBHelper:
         )
         logger.info("RTDBHelper initialized.")
 
+    def initialize_progress_data(self, username: str):
+        return {
+            "username": username,
+            "exercise": {}
+        }
+
     def put_data(self, user_data: dict[str, any]):
         """
         Adds a new user to the database via HTTP PUT request.
@@ -105,7 +111,7 @@ class RTDBHelper:
             logger.exception(f"Exception in delete_data for user {username}: {e}")
             raise
 
-    def put_progress(self, username: str, exercise_name: str, exercise_data: ExerciseData):
+    def put_progress(self, username: str, exercise_name: str, exercise_data: dict):
         """
         Adds exercise progress data for a user. New data is appended under the date,
         not updated.
@@ -113,19 +119,21 @@ class RTDBHelper:
         Args:
             username: Username of the user
             exercise_name: Name of the exercise
-            exercise_data: ExerciseData object containing the progress data
+            exercise_data: Dictionary containing the progress data
         """
         try:
             # Get existing progress data or create new Progress model
             existing_data = self.get_progress(username)
+            
+            # Initialize existing_data if not found
             if not existing_data:
-                existing_data = Progress(
-                    username=username,
-                    exercise={}
-                ).model_dump()
-                
-            # Format date as mm/dd/YYYY for storage key
-            date_str = exercise_data.date.strftime("%m/%d/%Y")
+                existing_data = self.initialize_progress_data(username)  # Initialize if not found
+            
+            # Create ExerciseData object
+            exercise_data_obj = ExerciseData(**exercise_data)  # This will handle date conversion
+            
+            # Access the date from the ExerciseData object
+            date_str = exercise_data_obj.date  # This is now a string
             
             # Ensure the exercise and date structure exists
             if exercise_name not in existing_data["exercise"]:
@@ -133,10 +141,11 @@ class RTDBHelper:
             if date_str not in existing_data["exercise"][exercise_name]:
                 existing_data["exercise"][exercise_name][date_str] = []
             
-            # Append the new exercise data while preserving the datetime in ISO format
-            exercise_data_dict = exercise_data.model_dump()
-            exercise_data_dict["date"] = exercise_data.date.isoformat()  # Store datetime in ISO format
-            existing_data["exercise"][exercise_name][date_str].append(exercise_data_dict)
+            # Append the new exercise data
+            existing_data["exercise"][exercise_name][date_str].append(exercise_data_obj.dict())  # Convert to dict
+            
+            # Log the data being sent to Firebase
+            logger.debug(f"Data to be sent to Firebase: {existing_data}")
             
             # Save to database
             snapshot = self.__db.put(
