@@ -4,6 +4,7 @@ from lifttrack import config
 from lifttrack.utils.logging_config import setup_logger
 from typing import Dict, Optional
 from lifttrack.models import Progress, ExerciseData
+import requests
 
 
 # Logging Configuration
@@ -111,57 +112,55 @@ class RTDBHelper:
             logger.exception(f"Exception in delete_data for user {username}: {e}")
             raise
 
-    def put_progress(self, username: str, exercise_name: str, exercise_data: dict):
-        """
-        Adds exercise progress data for a user. New data is appended under the date,
-        not updated.
+
+def put_progress(username: str, exercise_name: str, exercise_data: dict):
+    """
+    Sends a PUT request to store exercise progress data for a user.
+    
+    Args:
+        username: Username of the user
+        exercise_name: Name of the exercise
+        exercise_data: Dictionary containing the progress data
+    
+    Returns:
+        Response from the PUT request.
+    """
+    try:
+        # Format data as per the required structure
+        payload = {
+            "username": username,
+            "exercise": {
+                exercise_name: {
+                    exercise_data["date"]: {
+                        "date": exercise_data["date"],
+                        "suggestion": exercise_data["suggestion"],
+                        "features": exercise_data["features"],
+                        "frame": exercise_data["frame"]
+                    }
+                }
+            }
+        }
         
-        Args:
-            username: Username of the user
-            exercise_name: Name of the exercise
-            exercise_data: Dictionary containing the progress data
-        """
-        try:
-            # Get existing progress data or create new Progress model
-            existing_data = self.get_progress(username)
-            
-            # Initialize existing_data if not found
-            if not existing_data:
-                existing_data = self.initialize_progress_data(username)  # Initialize if not found
-            
-            # Create ExerciseData object
-            exercise_data_obj = ExerciseData(**exercise_data)  # This will handle date conversion
-            
-            # Access the date from the ExerciseData object
-            date_str = exercise_data_obj.date  # This is now a string
-            
-            # Ensure the exercise and date structure exists
-            if exercise_name not in existing_data["exercise"]:
-                existing_data["exercise"][exercise_name] = {}
-            if date_str not in existing_data["exercise"][exercise_name]:
-                existing_data["exercise"][exercise_name][date_str] = []
-            
-            # Append the new exercise data
-            existing_data["exercise"][exercise_name][date_str].append(exercise_data_obj.dict())  # Convert to dict
-            
-            # Log the data being sent to Firebase
-            logger.debug(f"Data to be sent to Firebase: {existing_data}")
-            
-            # Save to database
-            snapshot = self.__db.put(
-                url='/progress',
-                name=username,
-                data=existing_data
-            )
-            
-            if snapshot is None:
-                logger.error(f"Failed to save progress for user: {username}")
-                raise ValueError('Progress not saved')
-            logger.info(f"Progress saved successfully for user: {username}")
-            
-        except Exception as e:
-            logger.exception(f"Exception in put_progress for user {username}: {e}")
-            raise
+        # Log the payload for debugging
+        logger.info(f"Payload: {payload}")
+
+        # Construct the URL
+        url = f"http://192.168.0.12:8000/progress/{username}"
+
+        # Send the PUT request
+        response = requests.put(url, json=payload)
+
+        # Check for successful response
+        if response.status_code != 200:
+            logger.error(f"Failed to save progress: {response.status_code} {response.text}")
+            raise ValueError(f"HTTP Error: {response.status_code} {response.reason}")
+        
+        logger.info(f"Progress saved successfully for user: {username}")
+        return response
+
+    except Exception as e:
+        logger.exception(f"Exception in put_progress for user {username}: {e}")
+        raise
 
     def get_progress(self, username: str, exercise_name: Optional[str] = None) -> Optional[Dict]:
         """

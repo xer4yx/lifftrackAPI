@@ -23,12 +23,11 @@ router = APIRouter(
 # Initialize Limiter
 limiter = Limiter(key_func=get_remote_address)
 
-@router.put("/{username}/{exercise}")
+@router.put("/{username}")
 @limiter.limit("30/minute")
-async def create_progress(
+async def append_progress(
     username: str, 
-    exercise: str, 
-    exercise_data: ExerciseData,
+    exercise_data: dict,
     request: Request,
     current_user: User = Depends(get_current_user)
 ):
@@ -42,11 +41,11 @@ async def create_progress(
                 detail="Cannot modify other user's progress"
             )
 
-        rtdb.put_progress(username, exercise, exercise_data)
+        rtdb.put_progress(username, exercise_data)
         
         return JSONResponse(
             content={"msg": "Progress saved successfully"},
-            status_code=status.HTTP_201_CREATED
+            status_code=status.HTTP_200_OK
         )
     except ValidationError as vale:
         return JSONResponse(

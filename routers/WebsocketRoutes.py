@@ -1,4 +1,5 @@
 import asyncio
+import requests
 import base64
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 import cv2
@@ -35,7 +36,7 @@ async def websocket_endpoint(
     websocket: WebSocket,
     username: str = Query(..., description="Username of the person exercising"),
     exercise_name: str = Query(..., description="Name of the exercise being performed")
-    ):
+):
     await websocket.accept()
     
     frames_buffer = []  # Initialize buffer
@@ -59,8 +60,10 @@ async def websocket_endpoint(
     try:
         while frame_count < max_frames:
             try:
+                
                 # Check for timeout
                 current_time = asyncio.get_event_loop().time()
+                logger.info(f"Current time: {current_time}, last frame time: {last_frame_time}")
                 if current_time - last_frame_time > frame_timeout:
                     logger.info("Frame reception timeout - no frames received for 5 seconds")
                     frames_buffer.clear()  # Clear buffer on timeout
@@ -117,10 +120,11 @@ async def websocket_endpoint(
                         roboflow_results = process_frames_and_get_annotations(frame)
                         logger.info(f"Got Roboflow results")
                         
-                        if not roboflow_results:
-                            predictions = []
-                        else:
-                            predictions = roboflow_results.get('predictions', [])
+                        # Initialize predictions
+                        predictions = []
+                        if roboflow_results:
+                            # Extract only the 'class' from each detection
+                            predictions = [result['class'] for result in roboflow_results.get('predictions', []) if 'class' in result]
 
                         # 2. Get predicted class
                         predicted_class_name = predict_class(model, frames_buffer[-30:])
@@ -132,35 +136,42 @@ async def websocket_endpoint(
                             'speeds': calculate_speed(extract_movement_patterns(keypoints, keypoints)),
                             'body_alignment': extract_body_alignment(keypoints),
                             'stability': calculate_stability(keypoints, keypoints),
-                            'object_detections': predictions
+                            'object_detections': predictions  # Now this will be a list of class names or empty
                         }
 
                         # 4. Calculate accuracy and get suggestions
                         accuracy, suggestions = calculate_form_accuracy(features, predicted_class_name)
                         logger.info(f"Got form accuracy and suggestions")
 
-                        # Create the dictionary directly instead of using ExerciseData
-                        exercise_data_dict = {
-                            "date": datetime.now().isoformat(),  # Current date in ISO format
+                        # Create the date key for the current frame
+                        date_key = datetime.now().isoformat()
+
+                        # Prepare the exercise data to send to Firebase
+                        exercise_data = {
+                            "date": date_key,
                             "suggestion": suggestions[0] if suggestions else "No suggestions",
                             "features": {
-                                "objects": str(predictions),
+                                "objects": ', '.join(predictions) if predictions else "No objects detected",  # Join classes into a string
                                 "movement_pattern": predicted_class_name,
-                                "body_alignment": features['body_alignment'],
                                 "stability": str(features['stability'])
                             },
                             "frame": f"frame_{frame_count}"
                         }
 
                         # Log the data being sent to Firebase
-                        logger.debug(f"Data to be sent to Firebase: {exercise_data_dict}")
+                        logger.debug(f"Data to be sent to Firebase: {exercise_data}")
 
-                        # Store in database
-                        rtdb.put_progress(
-                            username=username,
-                            exercise_name=exercise_name.lower(),
-                            exercise_data=exercise_data_dict  # Send the dictionary directly
-                        )
+                        try:
+                            # result = rtdb.put_progress(
+                            #     username=username,
+                            #     exercise_name=exercise_name.lower(),
+                            #     exercise_data={date_key: exercise_data}  # Send the current data with the date key
+                            # )
+                            logger.info(f"Successfully stored data for {frame_count} frames")
+                        except Exception as e:
+                            logger.error(f"Failed to store data: {str(e)}")
+
+
 
                         # Send analysis results
                         await websocket.send_json({
@@ -192,6 +203,7 @@ async def websocket_endpoint(
                 'frame_count': frame_count,
                 'reason': 'max_frames_reached' if frame_count >= max_frames else 'timeout'
             })
+
             await websocket.close()
 
     except WebSocketDisconnect:
