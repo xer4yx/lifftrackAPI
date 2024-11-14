@@ -1,34 +1,79 @@
 import asyncio
 import base64
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 import cv2
 import numpy as np
-import tensorflow as tf
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+
 from lifttrack.utils.logging_config import setup_logger
-
-from lifttrack.v2.comvis.Live import (
-    model,
-    class_names,
-    resize_to_128x128,
-    predict_class,
-    provide_form_suggestions,
-    prepare_frames_for_input,
-)
-
-logger = setup_logger("router", "lifttrack_websocket.log")
-
+from lifttrack.comvis import websocket_process_frames
+from lifttrack.v2.comvis.Live import model, predict_class
 from lifttrack.v2.comvis.Movenet import analyze_frame  # This handles 192x192 internally
 from lifttrack.v2.comvis.object_track import process_frames_and_get_annotations
 from lifttrack.v2.comvis.features import extract_joint_angles, extract_movement_patterns, calculate_speed, extract_body_alignment, calculate_stability
-from lifttrack.v2.comvis.analyze_features import analyze_annotations
 from lifttrack.v2.comvis.progress import calculate_form_accuracy
-from lifttrack import config
 
-from datetime import datetime
 from lifttrack.models import ExerciseData, Features
 from lifttrack.dbhandler.rtdbHelper import rtdb
 
 router = APIRouter()
+logger = setup_logger("router", "lifttrack_websocket.log")
+
+
+# API Endpoint [Frame Operations]
+@router.websocket("/ws-tracking")  # Mobile version
+async def websocket_inference(websocket: WebSocket):
+    """
+    Endpoint for the WebSocket video feed. The server receives frames from the client that's formatted as a base64
+    bytes. The server decodes the frame in a thread pool, processes the frame to get inference and annotations, and
+    encodes it back to the client as bytes back.
+
+    Args:
+        websocket: WebSocket object.
+    """
+    await websocket.accept()
+    connection_open = True
+    while connection_open:
+        try:
+            # Expected format from client side is:
+            # {"type": "websocket.receive", "text": data}
+            frame_data = await websocket.receive()
+
+            if frame_data["type"] == "websocket.close":
+                connection_open = False
+                break
+
+            # frame_byte = base64.b64decode(frame_data["bytes"])
+            frame_byte = frame_data.get("bytes")
+
+            if not isinstance(frame_byte, bytes):
+                await websocket.close()
+                break
+
+            # Process frame in thread pool to avoid blocking
+            (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
+                None, websocket_process_frames, frame_byte
+            )
+
+            # Encode and send result
+            encoded, buffer = cv2.imencode(".jpeg", annotated_frame)
+
+            if not encoded:
+                raise WebSocketDisconnect
+
+            return_bytes = base64.b64decode(buffer.tobytes())
+
+            # Expected return to the client side is:
+            # {"type": "websocket.send", "bytes": data}
+            await websocket.send_bytes(return_bytes)
+        except WebSocketDisconnect:
+            connection_open = False
+        except Exception as e:
+            logger.exception(f"WebSocket error: {e}")
+            connection_open = False
+        finally:
+            if not connection_open:
+                await websocket.close()
+
 
 @router.websocket("/v2/ws-tracking")
 async def websocket_endpoint(

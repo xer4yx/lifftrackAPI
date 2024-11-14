@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocket
 from fastapi.websockets import WebSocketDisconnect
 from unittest.mock import patch
-from routers.WebsocketRoutes import router
+from routers.WebsocketRouter import router
 
 # Create a FastAPI app for testing
 @pytest.fixture

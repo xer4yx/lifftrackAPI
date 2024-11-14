@@ -36,9 +36,9 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-from routers.WebsocketRoutes import router as websocket_router
-from routers.ProgressRoutes import router as progress_router
-from lifttrack.middlware.syslogger import log_network_io, log_cpu_and_mem_usage, start_resource_monitoring
+from routers.WebsocketRouter import router as websocket_router
+from routers.ProgressRouter import router as progress_router
+from lifttrack.utils.syslogger import log_network_io, log_cpu_and_mem_usage, start_resource_monitoring
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -524,62 +524,6 @@ async def delete_user(username: str, request: Request):
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
-
-# API Endpoint [Frame Operations]
-@app.websocket("/ws-tracking")  # Mobile version
-async def websocket_inference(websocket: WebSocket):
-    """
-    Endpoint for the WebSocket video feed. The server receives frames from the client that's formatted as a base64
-    bytes. The server decodes the frame in a thread pool, processes the frame to get inference and annotations, and
-    encodes it back to the client as bytes back.
-
-    Args:
-        websocket: WebSocket object.
-    """
-    await websocket.accept()
-    connection_open = True
-    while connection_open:
-        try:
-            # Expected format from client side is:
-            # {"type": "websocket.receive", "text": data}
-            frame_data = await websocket.receive()
-
-            if frame_data["type"] == "websocket.close":
-                connection_open = False
-                break
-
-            # frame_byte = base64.b64decode(frame_data["bytes"])
-            frame_byte = frame_data.get("bytes")
-
-            if not isinstance(frame_byte, bytes):
-                await websocket.close()
-                break
-
-            # Process frame in thread pool to avoid blocking
-            (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
-                None, websocket_process_frames, frame_byte
-            )
-
-            # Encode and send result
-            encoded, buffer = cv2.imencode(".jpeg", annotated_frame)
-
-            if not encoded:
-                raise WebSocketDisconnect
-
-            return_bytes = base64.b64decode(buffer.tobytes())
-
-            # Expected return to the client side is:
-            # {"type": "websocket.send", "bytes": data}
-            await websocket.send_bytes(return_bytes)
-        except WebSocketDisconnect:
-            connection_open = False
-        except Exception as e:
-            logger.exception(f"WebSocket error: {e}")
-            connection_open = False
-        finally:
-            if not connection_open:
-                await websocket.close()
 
 
 # @app.get("/stream-tracking")
