@@ -1,39 +1,87 @@
-from lifttrack import timedelta, threading, asyncio, base64
+import threading
+
+from lifttrack import timedelta, threading
+from lifttrack.utils.logging_config import setup_logger
 from lifttrack.dbhandler.rtdbHelper import rtdb
 from lifttrack.models import User, Token, AppInfo, LoginForm
-from lifttrack.comvis import cv2, websocket_process_frames
-from lifttrack.auth import (create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_user, verify_password,
-                            get_password_hash, validate_input)
+from lifttrack.auth import (
+    create_access_token,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    get_current_user,
+    verify_password
+)
 
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket
+
+from fastapi import (
+    FastAPI, 
+    Depends, 
+    HTTPException, 
+    status,
+    Request
+)
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import WebSocketDisconnect
 from fastapi.security import OAuth2PasswordRequestForm
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
+
+from routers.WebsocketRouter import router as websocket_router
+from routers.ProgressRouter import router as progress_router
+from lifttrack.utils.syslogger import log_cpu_and_mem_usage, start_resource_monitoring
+
+# Initialize FastAPI app
+app = FastAPI()
+
+# Include the websocket router
+app.include_router(progress_router)
+app.include_router(websocket_router)
+
+# Initialize Limiter
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS Configuration
 server_origin = [
+    'http://192.168.1.233',
     'http://localhost:8000',
+    'http://lifttrack.ondigitalocean.com',
+    'http://lifttrack.ondigitalocean.com:8000'
 ]
-
 server_method = ["PUT", "GET", "DELETE"]
-
 server_header = ["*"]
 
-app = FastAPI()
+# Modify CORS middleware to include additional security headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=server_origin,
     allow_methods=server_method,
-    allow_headers=server_header
+    allow_headers=server_header,
+    allow_credentials=True,  # Added for secure cookie handling
+    expose_headers=["*"]
 )
-
+# Add SlowAPI middleware
+app.add_middleware(SlowAPIMiddleware)
 latest_frame_lock = threading.Lock()
 latest_frame = None
 
+# Initialize loggers
+# Configure logging for main.py
+logger = setup_logger("main", "lifttrack_main.log")
+cpu_mem_logger = setup_logger("cpu-mem", "server_resoruce.log")
+system_logger = setup_logger("system", "server_resource.log")
+network_logger = setup_logger("network", "server_resource.log")
+
+# Start resource monitoring
+start_resource_monitoring(system_logger, log_cpu_and_mem_usage, 20)
 
 # API Endpoint [ROOT]
 @app.get("/")
-async def read_root():
+@limiter.limit("10/minute")  # Apply specific rate limit
+async def read_root(request: Request):
     """Lifttrack API root endpoint."""
     try:
         return JSONResponse(
@@ -45,13 +93,23 @@ async def read_root():
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+    except Exception as e:
+        logger.exception(f"Error in read_root: {e}")
+        return JSONResponse(
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 # API Endpoint [About App]
 @app.get("/app-info")
-async def get_app_info(appinfo: AppInfo):
+@limiter.limit("20/minute")
+async def get_app_info(request: Request):
     """Endpoint to get information about the app."""
     try:
+        # Construct the AppInfo object here or retrieve it from a source
+        appinfo = AppInfo()
+        
         return JSONResponse(
             content=appinfo,
             status_code=status.HTTP_200_OK
@@ -61,16 +119,24 @@ async def get_app_info(appinfo: AppInfo):
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+    except Exception as e:
+        logger.exception(f"Error in get_app_info: {e}")
+        return JSONResponse(
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 # API Endpoint [Authentication Operations]
 @app.post("/login")
-async def login(login_form: LoginForm):
+@limiter.limit("10/minute")  # Limit login attempts
+async def login(login_form: LoginForm, request: Request):
     """
     API endpoint for user login.
 
     Args:
         login_form: BaseModel that contains username and password.
+        request: FastAPI Request object.
     """
     try:
         user_data = rtdb.get_data(login_form.username)
@@ -81,7 +147,7 @@ async def login(login_form: LoginForm):
                 detail="User not found"
             )
 
-        if not verify_password(login_form.password, user_data["password"]):
+        if not verify_password(login_form.password, user_data.get("password", "")):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid username or password"
@@ -89,29 +155,35 @@ async def login(login_form: LoginForm):
 
         return JSONResponse(
             content={"message": "Login successful", "success": True},
-            status_code=status.HTTP_201_CREATED
+            status_code=status.HTTP_200_OK
         )
     except HTTPException as httpe:
         return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+    except Exception as e:
+        logger.exception(f"Error in login: {e}")
+        return JSONResponse(
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @app.post("/token", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+@limiter.limit("10/minute")  # Limit token requests
+async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """
     Endpoint to get an access token.
 
     Args:
         form_data: OAuth2PasswordRequestForm that contains username and password.
+        request: FastAPI Request object.
     """
     try:
-        user = get_user_data(
-            username=form_data.username,
-            data=form_data.password
-        )
-        if user is None:
+        user = rtdb.get_data(form_data.username)
+
+        if user is None or not verify_password(form_data.password, user.get("password", "")):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect username or password",
@@ -123,67 +195,73 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
         return JSONResponse(
             content={"access_token": access_token, "token_type": "bearer"},
-            status_code=status.HTTP_201_CREATED
+            status_code=status.HTTP_200_OK
         )
     except HTTPException as httpe:
         return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
+        )
+    except Exception as e:
+        logger.exception(f"Error in login_for_access_token: {e}")
+        return JSONResponse(
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@app.post("/logout")
+@limiter.limit("10/minute")
+async def logout(request: Request, current_user: User = Depends(get_current_user)):
+    """
+    Endpoint to logout user and invalidate their token.
+    """
+    try:
+        # You might want to add the token to a blacklist here if implementing token revocation
+        return JSONResponse(
+            content={"msg": "Successfully logged out"},
+            status_code=status.HTTP_200_OK
+        )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
+    except Exception as e:
+        logger.exception(f"Error in logout: {e}")
+        return JSONResponse(
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 
 # API Endpoint [RTDB Operations]
 @app.get("/users/me/")
-async def read_users_me(current_user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def read_users_me(request: Request, current_user: User = Depends(get_current_user)):
     """
     Endpoint to get the current user.
 
     Args:
         current_user: User model that contains user data.
+        request: FastAPI Request object.
     """
     try:
-        return JSONResponse(
-            content=current_user,
-            status_code=status.HTTP_200_OK
-        )
-    except HTTPException as httpe:
-        return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
-        )
-
-
-@app.put("/user/create")
-def create_user(user: User = Depends(validate_input)):
-    """
-    Endpoint to create a new user in the Firebase Realtime Database.
-
-    Args:
-        user: User model that contains user data.
-    """
-    try:
-        user_data = {
-            "id": user.id,
-            "fname": user.fname,
-            "lname": user.lname,
-            "username": user.username,
-            "phoneNum": user.phoneNum,
-            "email": user.email,
-            "password": get_password_hash(user.password),
-            "pfp": user.pfp,
-            "isAuthenticated": user.isAuthenticated,
-            "isDeleted": user.isDeleted
+        # Convert User model to dictionary
+        user_dict = {
+            "id": current_user.id,
+            "fname": current_user.fname,
+            "lname": current_user.lname,
+            "username": current_user.username,
+            "phoneNum": current_user.phoneNum,
+            "email": current_user.email,
+            "password": current_user.password,
+            "pfp": current_user.pfp,
+            "isAuthenticated": current_user.isAuthenticated,
+            "isDeleted": current_user.isDeleted
         }
-
-        snapshot = rtdb.put_data(user_data)
-        if snapshot is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User creation failed."
-            )
-
         return JSONResponse(
-            content={"msg": "User created."},
+            content=user_dict,
             status_code=status.HTTP_200_OK
         )
     except HTTPException as httpe:
@@ -191,206 +269,12 @@ def create_user(user: User = Depends(validate_input)):
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-
-
-@app.get("/user/{username}")
-async def get_user_data(username: str, data=None):
-    """
-    Endpoint to get user data from the Firebase Realtime Database.
-
-    Args:
-        username: Username of the target user.
-        data: Data to get from the user. Defaults to None if needed to get all the information of user.
-    """
-    try:
-        user_data = rtdb.get_data(username, data)
-
-        if user_data is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found."
-            )
-
+    except Exception as e:
+        logger.exception(f"Error in read_users_me: {e}")
         return JSONResponse(
-            content=user_data,
-            status_code=status.HTTP_200_OK
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-    except HTTPException as httpe:
-        return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
-        )
-
-
-@app.put("/user/{username}")
-async def update_user_data(username: str, user: User):
-    """
-    Endpoint to update user data in the database.
-
-    Args:
-        username: Username of the target user.
-        user: User model that contains user data.
-    """
-    try:
-        user_data = {
-            "id": user.id,
-            "fname": user.fname,
-            "lname": user.lname,
-            "username": user.username,
-            "phoneNum": user.phoneNum,
-            "email": user.email,
-            "password": user.password,
-            "pfp": user.pfp,
-            "isAuthenticated": user.isAuthenticated,
-            "isDeleted": user.isDeleted
-        }
-
-        snapshot = rtdb.update_data(username, user_data)
-
-        if snapshot is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User update failed."
-            )
-
-        return JSONResponse(
-            content={"msg": "User updated."},
-            status_code=status.HTTP_200_OK
-        )
-    except HTTPException as httpe:
-        return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
-        )
-
-
-@app.put("/user/{username}/change-pass")
-async def change_password(user: User):
-    """
-    Endpoint to change user password.
-
-    Args:
-        username: Username of the target user.
-        user: User model that contains user data.
-    """
-    try:
-        hashed_pass = rtdb.get_data(user.username, "password")
-
-        if not verify_password(user.password, hashed_pass):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect password."
-            )
-
-        user_data = {
-            "id": user.id,
-            "fname": user.fname,
-            "lname": user.lname,
-            "username": user.username,
-            "phoneNum": user.phoneNum,
-            "email": user.email,
-            "password": get_password_hash(user.password),
-            "pfp": user.pfp,
-            "isAuthenticated": user.isAuthenticated,
-            "isDeleted": user.isDeleted
-        }
-
-        snapshot = rtdb.update_data(user.username, user_data)
-        if snapshot is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Password change failed."
-            )
-
-        return JSONResponse(
-            content={"msg": "Password changed."},
-            status_code=status.HTTP_200_OK
-        )
-    except HTTPException as httpe:
-        return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
-        )
-
-
-@app.delete("/user/{username}")
-def delete_user(username: str):
-    """
-    Endpoint to delete a user from the Firebase Realtime Database.
-
-    Args:
-        username: Username of the target
-    """
-    try:
-        deleted = rtdb.delete_data(username)
-        if deleted is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User deletion failed."
-            )
-
-        return JSONResponse(
-            content={"msg": "User deleted."},
-            status_code=status.HTTP_200_OK
-        )
-    except HTTPException as httpe:
-        return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
-        )
-
-
-# API Endpoint [Frame Operations]
-@app.websocket("/ws-tracking")  # Mobile version
-async def websocket_inference(websocket: WebSocket):
-    """
-    Endpoint for the WebSocket video feed. The server receives frames from the client that's formatted as a base64
-    bytes. The server decodes the frame in a thread pool, processes the frame to get inference and annotations, and
-    encodes it back to the client as bytes back.
-
-    Args:
-        websocket: WebSocket object.
-    """
-    await websocket.accept()
-    connection_open = True
-    while connection_open:
-        try:
-            # Expected format from client side is:
-            # {"type": "websocket.receive", "text": data}
-            frame_data = await websocket.receive()
-
-            if frame_data["type"] is "websocket.close":
-                connection_open = False
-                break
-
-            # frame_byte = base64.b64decode(frame_data["bytes"])
-            frame_byte = frame_data["bytes"]
-
-            # Process frame in thread pool to avoid blocking
-            (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
-                None, websocket_process_frames, frame_byte
-            )
-
-            # Encode and send result
-            encoded, buffer = cv2.imencode(".jpeg", annotated_frame)
-
-            if not encoded:
-                raise WebSocketDisconnect
-
-            return_bytes = base64.b64decode(buffer.tobytes())
-
-            # Expected return to the client side is:
-            # {"type": "websocket.send", "bytes": data}
-            await websocket.send_bytes(return_bytes)
-        except WebSocketDisconnect:
-            connection_open = False
-        except Exception as e:
-            print(f"Error: {e}\nClass: {e.__class__.__name__}\nCause: {e.__cause__}\n"
-                  f"Traceback: {e.__traceback__}")
-            connection_open = False
-
-    if not connection_open:
-        await websocket.close()
 
 
 # @app.get("/stream-tracking")

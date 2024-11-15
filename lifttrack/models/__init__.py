@@ -1,4 +1,8 @@
-from lifttrack import BaseModel, Union, Optional, datetime
+import re
+from datetime import datetime
+from typing import Optional, Union, Dict, Any
+
+from pydantic import BaseModel, validator
 
 
 class User(BaseModel):
@@ -9,7 +13,7 @@ class User(BaseModel):
     phoneNum: str
     email: str
     password: str
-    pfp: str = None
+    pfp: Optional[str] = None
     isAuthenticated: bool = False
     isDeleted: bool = False
 
@@ -17,6 +21,18 @@ class User(BaseModel):
 class LoginForm(BaseModel):
     username: str
     password: str
+
+    @validator('username')
+    def validate_username(cls, v):
+        if not v:
+            raise ValueError("Username cannot be empty.")
+        return v
+
+    @validator('password')
+    def validate_password_not_empty(cls, v):
+        if not v:
+            raise ValueError("Password cannot be empty.")
+        return v
 
 
 class Token(BaseModel):
@@ -40,7 +56,39 @@ class Frame(BaseModel):
     image: bytes
 
 
-class FormOutput(BaseModel):
-    user: str
-    current_reps: int
-    num_errors: int
+class Features(BaseModel):
+    objects: str
+    joint_angles: Dict[str, Any]
+    movement_pattern: str
+    speeds: dict
+    body_alignment: Any
+    stability: float
+
+
+class ExerciseData(BaseModel):
+    date: str = datetime.now().isoformat()
+    suggestion: str
+    features: Features
+    frame: str
+
+
+class Exercise(BaseModel):
+    """
+    Model for exercise data where the exercise name is the direct parent
+    of the exercise data
+    """
+    rdl: Optional[ExerciseData] = None
+    shoulder_press: Optional[ExerciseData] = None
+    bench_press: Optional[ExerciseData] = None
+    deadlift: Optional[ExerciseData] = None
+    # Add other exercises as needed
+
+    def set_exercise_data(self, exercise_name: str, data: ExerciseData):
+        """Helper method to set exercise data for a specific exercise"""
+        setattr(self, exercise_name.lower(), data)
+
+
+class Progress(BaseModel):
+    username: str
+    exercise: Exercise
+    

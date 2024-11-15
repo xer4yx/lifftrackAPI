@@ -22,11 +22,20 @@ result_queue = Queue(maxsize=30)
 # TODO: Implement this function for `extract_features`
 def run_inference(frame: Mat | ndarray):
     """Run both MoveNet and Roboflow inference"""
-
-    # MoveNet inference
-    # img = tf.image.resize_with_pad(tf.expand_dims(frame, axis=0), 192, 192)
-    # input_img = tf.cast(img, dtype=tf.int32)
-    keypoints = movenet.run_keypoint_inference(frame)
+    
+    # MoveNet inference - properly preprocess the frame
+    # First convert to float32 (0-255 range), then cast to int32
+    input_img = tf.cast(frame, dtype=tf.float32)
+    input_img = tf.expand_dims(input_img, axis=0)
+    input_img = tf.image.resize_with_pad(
+        input_img,
+        target_height=192,
+        target_width=192
+    )
+    input_img = tf.cast(input_img, dtype=tf.int32)
+    
+    # Run MoveNet inference
+    keypoints = movenet.run_keypoint_inference(input_img)
 
     # Roboflow inference
     try:
@@ -37,7 +46,7 @@ def run_inference(frame: Mat | ndarray):
 
     # Combine results
     frame_annotation = {
-        'keypoints': keypoints,
+        'keypoints': keypoints[0],  # Extract from batch dimension
         'objects': roboflow_results['predictions'],
         'image_info': roboflow_results['image']
     }
@@ -46,17 +55,34 @@ def run_inference(frame: Mat | ndarray):
 
 
 # TODO: Create a `calculate_angle` and `calculate_distance` function
-def extract_features(annotation: dict[str, dict | list]):
+def extract_features(annotation):
     """Extract features from a single annotation"""
     if not isinstance(annotation, dict):
         print(f"Expected a dictionary for annotation, got {type(annotation)}: {annotation}")
         return np.zeros(9, dtype=np.float32)
 
-    keypoints = annotation.get('keypoints', {})
-    objects = annotation.get('objects', [])
-
-    if not keypoints:
+    # Get keypoints tensor and convert to numpy
+    keypoints_tensor = annotation.get('keypoints')
+    if keypoints_tensor is None:
         return np.zeros(9, dtype=np.float32)
+    
+    # Convert tensor to numpy and create a dictionary mapping
+    # Take first element from batch dimension [0]
+    keypoints_array = keypoints_tensor.numpy()[0]  # Now shape is (17, 3) [y, x, confidence]
+    keypoint_mapping = {
+        'left_shoulder': keypoints_array[5],  # Indices based on MoveNet output
+        'right_shoulder': keypoints_array[6],
+        'left_elbow': keypoints_array[7],
+        'left_wrist': keypoints_array[9],
+        'left_hip': keypoints_array[11],
+        'right_hip': keypoints_array[12],
+        'left_knee': keypoints_array[13],
+        'left_ankle': keypoints_array[15]
+    }
+
+    # Convert the format to match what the rest of the function expects
+    keypoints = {k: [v[1], v[0]] for k, v in keypoint_mapping.items()}  # Swap x,y coordinates
+    objects = annotation.get('objects', [])
 
     def calculate_angle(p1, p2, p3):
         vector1 = np.array([p1[0] - p2[0], p1[1] - p2[1]])
@@ -102,7 +128,7 @@ def extract_features(annotation: dict[str, dict | list]):
         [pos.get('x', 0) for pos in objects if pos.get('class') in ['barbell', 'dumbbell']]) if objects else 0.0
 
     return np.array([
-        elbow_angle / 180.0,
+        elbow_angle / 180.00,
         knee_angle / 180.0,
         hip_angle / 180.0,
         spine_vertical / 90.0,
@@ -127,7 +153,7 @@ def websocket_process_frames(frame_data: bytes | io.BytesIO):
         Annotated frame with inference results.
     """
     try:
-        # Convert bytes to numpy array
+        # Convert bytes to numpy array properly
         np_arr = np.frombuffer(frame_data, np.uint8)
         
         # Decode image
@@ -145,18 +171,23 @@ def websocket_process_frames(frame_data: bytes | io.BytesIO):
             size=(192, 192)
         )
         input_image = tf.cast(input_image, dtype=tf.int32)
+        print(input_image.shape)
 
         # Run inference
         inference = run_inference(frame=frame)  # Use original frame for object detection
+        print(inference)
 
         # Extract features
         features = extract_features(annotation=inference)
+        print(features)
 
         # Process frame for CNN
         processed_frame = analyzer.process_frame_for_cnn(input_image)
+        print(processed_frame.shape)
 
         # Add frame and features to the buffer
         analyzer.add_to_buffer(processed_frame, features)
+        print(analyzer.buffer_index)
 
         # Run inference if buffer is full
         prediction = None
@@ -176,6 +207,8 @@ def websocket_process_frames(frame_data: bytes | io.BytesIO):
             # Make prediction
             with tf.device('/CPU:0'):
                 prediction = analyzer.model.predict(input_data, verbose=0)
+                
+            print(prediction)
 
         # Draw predictions
         annotated_frame = draw_prediction(

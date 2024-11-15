@@ -1,3 +1,9 @@
+import warnings
+from cryptography.utils import CryptographyDeprecationWarning
+
+# Suppress CryptographyDeprecationWarning
+warnings.filterwarnings('ignore', category=CryptographyDeprecationWarning)
+
 import io
 import docker
 import time

@@ -17,7 +17,7 @@ class_names = {
 
 
 class ExerciseFormAnalyzer:
-    def __init__(self, model_path=config.get(section="CNN", option="path"), input_shape=(112, 112),
+    def __init__(self, model_path=config.get(section="CNN", option="test-0.1.0"), input_shape=(112, 112),
                  max_video_length=30):
         self.__start_time = time.time()
         self.model = tf.keras.models.load_model(model_path)

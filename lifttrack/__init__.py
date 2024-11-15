@@ -1,4 +1,10 @@
+from lifttrack.utils.warning_suppressor import suppress_warnings
+
+# Suppress TensorFlow warnings
+suppress_warnings()
+
 import os
+import warnings
 import threading
 import asyncio
 from datetime import datetime, timedelta
@@ -9,8 +15,6 @@ from typing import Optional, Union
 import cv2
 from cv2 import Mat
 import base64
-
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 config_path = os.path.join(os.path.dirname(__file__), '..', 'config.ini')
 

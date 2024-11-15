@@ -4,16 +4,10 @@ from fastapi.testclient import TestClient
 
 from main import app
 from lifttrack import os, logging
+from lifttrack.utils.logging_config import setup_logger
 
-logger = logging.getLogger("test_cases_api")
-handler = logging.FileHandler(
-    filename=os.path.join(os.path.dirname(__file__), "..", "logs/test_cases.log"),
-    mode="a"
-)
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
+# Configure logging for test_cases_api
+logger = setup_logger("test_cases_api", "test_cases.log")
 
 client = TestClient(app)
 

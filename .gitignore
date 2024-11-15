@@ -11,3 +11,6 @@ tests/graph_img_test.py
 tests/sampleAPI.py
 tests/secretkey.py
 logs/
+
+*.jpg
+*.png
