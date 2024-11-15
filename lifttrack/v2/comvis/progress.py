@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 import base64
 from io import BytesIO
 from lifttrack.v2.comvis.Live import predict_class
-import websocket
+from lifttrack.utils.logging_config import setup_logger
+
+logger = setup_logger("progress-v2", "comvis.log")
 
 # Function to display the keypoints on the frame
 def display_keypoints_on_frame(frame, keypoints, threshold=0.5):
@@ -60,7 +62,7 @@ def calculate_form_accuracy(features, predicted_class_name):
         if stability.get('shoulder_stability', 0) < 0.75:
             accuracy -= 0.1
             suggestions.append("Keep shoulder stability through the lift.")
-    
+    logger.info(f"Form accuracy: {accuracy}, Suggestions: {suggestions}")
     return accuracy, suggestions
 
 # Function to convert an image to base64 format
@@ -69,35 +71,35 @@ def img_to_base64(image):
     img_b64 = base64.b64encode(buffer).decode('utf-8')
     return img_b64
 
-def frame_by_frame_analysis(annotations, final_annotated_frame, class_names, base_url):
-    analysis_results = []
-    # Remove the analyze_annotations call and directly use the annotations parameter
-    features = annotations  
+# def frame_by_frame_analysis(annotations, final_annotated_frame, class_names, base_url):
+#     analysis_results = []
+#     # Remove the analyze_annotations call and directly use the annotations parameter
+#     features = annotations  
 
-    for frame_index, feature in enumerate(features):
-        frame_path = feature['frame_path']
-        frame = cv2.imread(frame_path)
+#     for frame_index, feature in enumerate(features):
+#         frame_path = feature['frame_path']
+#         frame = cv2.imread(frame_path)
 
-        analysis_features = {
-            'angles': feature['joint_angles'],
-            'speed': feature['speeds'],
-            'alignment': feature['body_alignment'],
-            'stability': {'core_stability': feature['stability']}
-        }
+#         analysis_features = {
+#             'angles': feature['joint_angles'],
+#             'speed': feature['speeds'],
+#             'alignment': feature['body_alignment'],
+#             'stability': {'core_stability': feature['stability']}
+#         }
 
-        accuracy, suggestions = calculate_form_accuracy(analysis_features, predicted_class_name)
-        frame_with_keypoints = display_keypoints_on_frame(frame, feature['keypoints'])
-        frame_b64 = img_to_base64(frame_with_keypoints)
+#         accuracy, suggestions = calculate_form_accuracy(analysis_features, predicted_class_name)
+#         frame_with_keypoints = display_keypoints_on_frame(frame, feature['keypoints'])
+#         frame_b64 = img_to_base64(frame_with_keypoints)
 
-        analysis_results.append({
-            'frame_b64': frame_b64,
-            'accuracy': accuracy,
-            'suggestions': suggestions,
-            'frame_index': frame_index,
-            'predicted_class_name': predicted_class_name
-        })
+#         analysis_results.append({
+#             'frame_b64': frame_b64,
+#             'accuracy': accuracy,
+#             'suggestions': suggestions,
+#             'frame_index': frame_index,
+#             'predicted_class_name': predicted_class_name
+#         })
 
-    return {
-        'frames': analysis_results,
-        'total_frames': len(features)
-    }
+#     return {
+#         'frames': analysis_results,
+#         'total_frames': len(features)
+#     }

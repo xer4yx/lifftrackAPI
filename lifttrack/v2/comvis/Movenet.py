@@ -3,12 +3,15 @@ import tensorflow as tf
 import tensorflow_hub as hub
 import numpy as np
 
-from lifttrack.v2.comvis.utils import resize_to_192x192
 from lifttrack import config
+from lifttrack.v2.comvis.utils import resize_to_192x192
+from lifttrack.utils.logging_config import setup_logger
 
 # Load the MoveNet model
 movenet_model = hub.load(config.get('TensorHub', 'model'))
 movenet = movenet_model.signatures['serving_default']
+
+logger = setup_logger("movenet-v2", "comvis.log")
 
 # Initialize dictionary for keypoints
 KEYPOINT_DICT = {
@@ -53,7 +56,7 @@ def analyze_frame(frame):
     # MoveNet inference
     results = movenet(input_img)
     keypoints = results['output_0'].numpy()[0, 0, :, :3]
-    print(f"Keypoints: {keypoints}")  # Extract keypoints
+    print(f"Received Movenet Keypoints: {keypoints}")  # Extract keypoints
 
     # Process keypoints for annotations
     shaped_keypoints = process_keypoints(keypoints, frame.shape)

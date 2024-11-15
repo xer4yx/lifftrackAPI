@@ -16,7 +16,7 @@ from lifttrack.models import Exercise, ExerciseData, Features
 from lifttrack.dbhandler.rtdbHelper import rtdb
 
 router = APIRouter()
-logger = setup_logger("router", "lifttrack_websocket.log")
+logger = setup_logger("websocket", "protocols.log")
 
 
 # API Endpoint [Frame Operations]
@@ -151,17 +151,14 @@ async def websocket_endpoint(
                 # Add frame to buffer for analysis
                 frames_buffer.append(frame)
                 frame_count += 1
-                logger.info(f"Frame count: {frame_count}")
 
                 # Process analysis every 30th frame
                 if frame_count % 30 == 0:
                     try:
+                        logger.info(f"Frame count: {frame_count}")
                         # 1. Get MoveNet and Roboflow inference
                         _, keypoints = analyze_frame(frame)
-                        logger.info(f"Got MoveNet results")
-                        
                         roboflow_results = process_frames_and_get_annotations(frame)
-                        logger.info(f"Got Roboflow results")
                         
                         if not roboflow_results:
                             predictions = []
@@ -170,7 +167,6 @@ async def websocket_endpoint(
 
                         # 2. Get predicted class
                         predicted_class_name = predict_class(model, frames_buffer[-30:])
-                        logger.info(f"Got predicted class")
 
                         # 3. Extract features
                         features = {
@@ -183,7 +179,6 @@ async def websocket_endpoint(
 
                         # 4. Calculate accuracy and get suggestions
                         accuracy, suggestions = calculate_form_accuracy(features, predicted_class_name)
-                        logger.info(f"Got form accuracy and suggestions")
 
                         # Create Features object
                         features_obj = Features(

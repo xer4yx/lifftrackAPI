@@ -4,9 +4,9 @@ import asyncio
 import websockets
 import tensorflow as tf
 from lifttrack import config
-# Remove the resize functions and import them from utils
-from lifttrack.v2.comvis.utils import resize_to_128x128, resize_to_192x192
+from lifttrack.utils.logging_config import setup_logger
 from lifttrack.v2.comvis.analyze_features import analyze_annotations
+from lifttrack.v2.comvis.utils import resize_to_128x128
 
 class_names = {
     0: "benchpress",
@@ -15,7 +15,13 @@ class_names = {
     3: "shoulder_press",
 }
 
-model = tf.keras.models.load_model(config.get('CNN', 'build-0.1.1'), compile=False)  # Don't load optimizer    
+
+logger = setup_logger("analyzer-v2", "comvis.log")
+try:
+    model = tf.keras.models.load_model(config.get('CNN', 'build-0.1.1'), compile=False)  # Don't load optimizer
+    logger.info("Analyzer model loaded successfully")
+except Exception as e:
+    logger.error(f"Error loading model: {e}")
 
 
 def prepare_frames_for_input(frame_list, num_frames=30):
@@ -72,6 +78,7 @@ def predict_class(model, frame_list):
     frames_input_batch = np.expand_dims(frames_input, axis=0)
     predictions = model.predict(frames_input_batch)
     predicted_class_index = np.argmax(predictions, axis=1)[0]
+    logger.info(f"Predicted class index: {predicted_class_index}")
     return class_names[predicted_class_index]
 
 def provide_form_suggestions(predicted_class_name, features):

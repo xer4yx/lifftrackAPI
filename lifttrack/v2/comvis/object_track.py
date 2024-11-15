@@ -1,17 +1,25 @@
 import cv2
 import os
 from inference_sdk import InferenceHTTPClient
+
+from lifttrack import config
+from lifttrack.comvis.tensor import check_docker_container_status
+from lifttrack.utils.logging_config import setup_logger
 from lifttrack.v2.comvis.Movenet import analyze_frame
 
+container_logger = setup_logger("docker-container", "container.log")
+comvis_logger = setup_logger("roboflow-v2", "comvis.log")
+
 # Initialize the Roboflow Inference Client
+check_docker_container_status(container_logger, config.get(section="Docker", option="container_name"))
 client = InferenceHTTPClient(
     api_url="http://localhost:9001",  # URL for the Roboflow Inference Client
     api_key="TiK2P0kPcpeVnssORWRV",  # Your API Key
 )
 
 # Set your Roboflow project details
-project_id = "lifttrack"
-model_version = 4
+project_id = config.get(section="Roboflow", option="project_id")
+model_version = int(config.get(section="Roboflow", option="model_ver"))
 
 # Function to draw bounding boxes on the frame with scaling
 def draw_bounding_boxes(frame, predictions, original_size):
@@ -47,7 +55,7 @@ def process_frames_and_get_annotations(frame):
     try:
         # Run Roboflow inference for object detection
         roboflow_results = client.infer(frame, model_id=f"{project_id}/{model_version}")  # Send the image directly
-        
+        comvis_logger.info(f"Received Roboflow Inference: {roboflow_results}")
         return roboflow_results
         
     except Exception as e:
