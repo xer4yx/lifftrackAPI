@@ -13,9 +13,9 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 
-COPY requirements.txt .
+COPY ./requirements.txt ./lifttrackAPI/requirements.txt
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r ./requirements.txt
 
 FROM nvidia/cuda:12.0.0-base-ubuntu22.04
 
