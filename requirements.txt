@@ -13,12 +13,12 @@ pox==0.3.5
 psutil==5.9.7
 pydantic==2.9.2
 pytest==8.3.3
-python_firebase==1.2.1
+git+https://github.com/ozgur/python-firebase.git#egg=python-firebase
 python_jose==3.3.0
 Requests==2.32.3
 slowapi==0.1.9
-tensorflow==2.16.1
-tensorflow_hub==0.16.1
-tensorflow_intel==2.16.1
+tensorflow==2.17.0
+tensorflow_hub==0.17.0
+tensorflow_intel==2.17.0
 websocket_client==1.7.0
 websockets==13.0.1
