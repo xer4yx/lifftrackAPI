@@ -51,7 +51,7 @@ async def websocket_inference(websocket: WebSocket):
 
             # Process frame in thread pool to avoid blocking
             (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
-                None, websocket_process_frames, frame_byte
+                None, websocket_process_frames, model, frame_byte
             )
 
             # Encode and send result

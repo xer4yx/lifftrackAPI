@@ -15,7 +15,7 @@ class_names = {
     3: "shoulder_press",
 }
 
-model = tf.keras.models.load_model(config.get('CNN', 'test-0.1.0'), compile=False)  # Don't load optimizer    
+model = tf.keras.models.load_model(config.get('CNN', 'build-0.1.1'), compile=False)  # Don't load optimizer    
 
 
 def prepare_frames_for_input(frame_list, num_frames=30):
@@ -61,7 +61,7 @@ def prepare_frames_for_input(frame_list, num_frames=30):
     frames_stack = np.stack(frames_resized, axis=0)  # Shape: (num_frames, 128, 128, 3)
     
     # Verify final shape
-    expected_shape = (num_frames, 20, 20, 3)
+    expected_shape = (num_frames, 128, 128, 3)
     if frames_stack.shape != expected_shape:
         raise ValueError(f"Unexpected output dimensions. Expected {expected_shape}, got {frames_stack.shape}")
     

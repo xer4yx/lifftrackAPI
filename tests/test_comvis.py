@@ -5,8 +5,6 @@ import base64
 import cv2
 from unittest.mock import Mock, patch, MagicMock
 from lifttrack.comvis import (
-    run_inference,
-    extract_features,
     websocket_process_frames,
     MoveNetInference,
     RoboflowInference,
@@ -234,7 +232,7 @@ class TestComVisUtils(unittest.TestCase):
 
             # Process multiple frames from the GIF
             for i, frame_bytes in enumerate(self.frames[:3]):  # Test first 3 frames
-                frame, prediction = websocket_process_frames(frame_bytes)
+                frame, prediction = websocket_process_frames(self.analyzer, frame_bytes)
                 logger.debug(f"Frame {i+1} processed")
                 
                 self.assertIsNotNone(frame)
@@ -279,7 +277,7 @@ class TestComVisUtils(unittest.TestCase):
             }
             logger.debug("Mock responses configured")
 
-            frame, prediction = websocket_process_frames(self.test_frame_bytes)
+            frame, prediction = websocket_process_frames(self.analyzer, self.test_frame_bytes)
             logger.debug("Frame processed")
 
             self.assertIsNotNone(frame)
@@ -304,7 +302,7 @@ class TestComVisUtils(unittest.TestCase):
         try:
             # Test corrupted data
             corrupted_bytes = b'corrupted_image_data'
-            frame, prediction = websocket_process_frames(corrupted_bytes)
+            frame, prediction = websocket_process_frames(self.analyzer, corrupted_bytes)
             logger.debug("Tested corrupted image data")
             
             self.assertIsNone(frame)
@@ -313,7 +311,7 @@ class TestComVisUtils(unittest.TestCase):
 
             # Test empty data
             empty_bytes = b''
-            frame, prediction = websocket_process_frames(empty_bytes)
+            frame, prediction = websocket_process_frames(self.analyzer, empty_bytes)
             logger.debug("Tested empty data")
             
             self.assertIsNone(frame)
@@ -343,7 +341,7 @@ class TestComVisUtils(unittest.TestCase):
             }
             logger.debug("Mock responses configured")
 
-            frame, prediction = websocket_process_frames(large_image_bytes)
+            frame, prediction = websocket_process_frames(self.analyzer, large_image_bytes)
             logger.debug("Large frame processed")
 
             self.assertIsNotNone(frame)
@@ -371,7 +369,7 @@ class TestComVisUtils(unittest.TestCase):
                     test_bytes = buffer.tobytes()
                     logger.debug("Test image created")
                     
-                    frame, _ = websocket_process_frames(test_bytes)
+                    frame, _ = websocket_process_frames(self.analyzer, test_bytes)
                     logger.debug("Frame processed")
                     
                     if frame is not None:
