@@ -133,9 +133,11 @@ def put_progress(username: str, exercise_name: str, exercise_data: dict):
                 exercise_name: {
                     exercise_data["date"]: {
                         "date": exercise_data["date"],
-                        "suggestion": exercise_data["suggestion"],
-                        "features": exercise_data["features"],
-                        "frame": exercise_data["frame"]
+                        "test": exercise_data["test"]
+                        # "date": exercise_data["date"],
+                        # "suggestion": exercise_data["suggestion"],
+                        # "features": exercise_data["features"],
+                        # "frame": exercise_data["frame"]
                     }
                 }
             }

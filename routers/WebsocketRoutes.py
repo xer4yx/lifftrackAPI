@@ -146,27 +146,32 @@ async def websocket_endpoint(
                         # Create the date key for the current frame
                         date_key = datetime.now().isoformat()
 
-                        # Prepare the exercise data to send to Firebase
+
+                        # Try simpler payload
                         exercise_data = {
-                            "date": date_key,
-                            "suggestion": suggestions[0] if suggestions else "No suggestions",
-                            "features": {
-                                "objects": ', '.join(predictions) if predictions else "No objects detected",  # Join classes into a string
-                                "movement_pattern": predicted_class_name,
-                                "stability": str(features['stability'])
-                            },
-                            "frame": f"frame_{frame_count}"
+                            "test": "test"
                         }
+                        # Prepare the exercise data to send to Firebase
+                        # exercise_data = {
+                        #     "date": date_key,
+                        #     "suggestion": suggestions[0] if suggestions else "No suggestions",
+                        #     "features": {
+                        #         "objects": ', '.join(predictions) if predictions else "No objects detected",  # Join classes into a string
+                        #         "movement_pattern": predicted_class_name,
+                        #         "stability": str(features['stability'])
+                        #     },
+                        #     "frame": f"frame_{frame_count}"
+                        # }
 
                         # Log the data being sent to Firebase
                         logger.debug(f"Data to be sent to Firebase: {exercise_data}")
 
                         try:
-                            # result = rtdb.put_progress(
-                            #     username=username,
-                            #     exercise_name=exercise_name.lower(),
-                            #     exercise_data={date_key: exercise_data}  # Send the current data with the date key
-                            # )
+                            result = rtdb.put_progress(
+                                username=username,
+                                exercise_name=exercise_name.lower(),
+                                exercise_data={date_key: exercise_data}  # Send the current data with the date key
+                            )
                             logger.info(f"Successfully stored data for {frame_count} frames")
                         except Exception as e:
                             logger.error(f"Failed to store data: {str(e)}")
