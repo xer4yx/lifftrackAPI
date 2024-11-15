@@ -3,7 +3,7 @@ from firebase import firebase
 from lifttrack import config
 from lifttrack.utils.logging_config import setup_logger
 from typing import Dict, Optional
-from lifttrack.models import Progress, ExerciseData
+from lifttrack.models import Exercise, Progress, ExerciseData
 
 
 # Logging Configuration
@@ -105,7 +105,7 @@ class RTDBHelper:
             logger.exception(f"Exception in delete_data for user {username}: {e}")
             raise
 
-    def put_progress(self, username: str, exercise_name: str, exercise_data: ExerciseData):
+    def put_progress(self, username: str, exercise: Exercise):
         """
         Adds exercise progress data for a user. New data is appended under the date,
         not updated.
@@ -118,9 +118,9 @@ class RTDBHelper:
         try:
             # Save to database
             snapshot = self.__db.put(
-                url='/progress',
+                url=f'/progress',
                 name=username,
-                data=exercise_data.model_dump()
+                data=exercise.model_dump()
             )
             
             if snapshot is None:
