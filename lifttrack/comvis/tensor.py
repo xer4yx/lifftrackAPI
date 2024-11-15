@@ -1,14 +1,8 @@
-import warnings
-from cryptography.utils import CryptographyDeprecationWarning
-
-# Suppress CryptographyDeprecationWarning
-warnings.filterwarnings('ignore', category=CryptographyDeprecationWarning)
-
 import io
 import docker
 import time
 
-from lifttrack import config, os
+from lifttrack import config
 from lifttrack.comvis import tf, hub
 
 from inference_sdk import InferenceHTTPClient
@@ -30,74 +24,75 @@ def cast_image(image):
     return image
 
 
-def check_docker_container_status(container_name: str = None):
+def check_docker_container_status(logger,container_name: str = None):
+    """
+    Checks and ensures the Roboflow inference container is running.
+    For production cloud deployment.
+    """
     if container_name is None:
         raise ValueError("container_name cannot be None")
 
     retry_delay = 5
-    docker_desktop_path = "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe"
-    max_wait_time = 300  # Maximum wait time of 5 minutes
-    
-    while True:
-        try:
-            # First check if Docker daemon is running
-            try:
-                client = docker.from_env()
-                client.ping()  # Will raise exception if daemon isn't running
-            except docker.errors.DockerException:
-                print("Docker daemon not running. Attempting to start Docker Desktop...")
-                # Start Docker Desktop on Windows 11
-                os.system(f'start "" "{docker_desktop_path}"')
-                print("Waiting for Docker Desktop to start...")
-                
-                # Incrementally wait for Docker Desktop to start
-                wait_time = 0
-                increment = 10  # Check every 10 seconds
-                while wait_time < max_wait_time:
-                    try:
-                        client = docker.from_env()
-                        client.ping()
-                        print(f"Docker Desktop started successfully after {wait_time} seconds")
-                        break
-                    except docker.errors.DockerException:
-                        time.sleep(increment)
-                        wait_time += increment
-                        print(f"Still waiting for Docker Desktop... ({wait_time} seconds)")
-                
-                if wait_time >= max_wait_time:
-                    raise TimeoutError("Docker Desktop failed to start within 5 minutes")
-                continue
+    max_retries = 3
+    retry_count = 0
 
+    while retry_count < max_retries:
+        try:
+            client = docker.from_env()
+            
+            # Check if container exists and its status
             try:
                 container = client.containers.get(container_name)
+                
+                # Check container health
+                container.reload()
                 if container.status == "running":
-                    print(f"Docker Container {container_name} is already running")
-                    break
-                else:
-                    container.start()
+                    # Verify container is healthy
+                    if container.attrs.get('State', {}).get('Health', {}).get('Status') == 'healthy':
+                        logger.info(f"Container {container_name} is running and healthy")
+                        return
+                    else:
+                        logger.warning(f"Container {container_name} is running but may not be healthy")
+                        return
+                
+                # If container exists but not running, remove it and recreate
+                container.remove(force=True)
+                logger.info(f"Removed existing container {container_name}")
+                
             except docker.errors.NotFound:
-                # If container doesn't exist, create and start it
-                container = client.containers.run(
-                    "roboflow/roboflow-inference-server-gpu:latest",
-                    name=container_name,
-                    ports={'9001/tcp': 9001},
-                    detach=True,
-                    gpu=True,
-                    network="host"
-                )
+                pass  # Container doesn't exist, will create new one
             
-            # Wait and verify container is running
+            # Create new container with health check
+            container = client.containers.run(
+                "roboflow/roboflow-inference-server-gpu:latest",
+                name=container_name,
+                ports={'9001/tcp': 9001},
+                detach=True,
+                gpu=True,
+                network="host",
+                healthcheck={
+                    "test": ["CMD", "curl", "-f", "http://localhost:9001/health"],
+                    "interval": 30000000000,  # 30 seconds in nanoseconds
+                    "timeout": 3000000000,    # 3 seconds in nanoseconds
+                    "retries": 3
+                },
+                restart_policy={"Name": "unless-stopped"}
+            )
+            
+            # Wait for container to be healthy
+            logger.info(f"Waiting for container {container_name} to be ready...")
             time.sleep(retry_delay)
             container.reload()
+            
             if container.status == "running":
-                print(f"Docker Container {container_name} started successfully")
-                break
+                logger.info(f"Container {container_name} started successfully")
+                return
                 
-        except (docker.errors.DockerException,
-                docker.errors.ImageNotFound, 
-                docker.errors.APIError) as e:
-            print(f"Warning: Docker container issue: {str(e)}")
-            print("Retrying connection...")
+        except docker.errors.DockerException as e:
+            retry_count += 1
+            if retry_count >= max_retries:
+                raise RuntimeError(f"Failed to start container after {max_retries} attempts: {str(e)}")
+            logger.error(f"Docker error (attempt {retry_count}/{max_retries}): {str(e)}")
             time.sleep(retry_delay)
             continue
 
@@ -123,7 +118,7 @@ class MoveNetInference:
 
 class RoboflowInference:
     def __init__(self):
-        check_docker_container_status(config.get(section="Docker", option="container_name"))
+        # check_docker_container_status(config.get(section="Docker", option="container_name"))
         self.project_id = config.get(section="Roboflow", option="project_id")
         self.model_version = int(config.get(section="Roboflow", option="model_ver"))
         self.__start_time = time.time()

@@ -11,16 +11,12 @@ from lifttrack.comvis.Live import ExerciseFormAnalyzer, class_names
 from lifttrack.comvis.tensor import MoveNetInference, RoboflowInference
 from lifttrack.utils import draw_prediction
 
-movenet = MoveNetInference()
-roboflow = RoboflowInference()
-analyzer = ExerciseFormAnalyzer()
-
 frame_queue = Queue(maxsize=30)
 result_queue = Queue(maxsize=30)
 
 
 # TODO: Implement this function for `extract_features`
-def run_inference(frame: Mat | ndarray):
+def run_inference(movenet, roboflow, frame: Mat | ndarray):
     """Run both MoveNet and Roboflow inference"""
     
     # MoveNet inference - properly preprocess the frame
@@ -142,7 +138,7 @@ def extract_features(annotation):
 
 # TODO: Implement `run_inference` and `extract_features` in this function
 # TODO: Implement 3D CNN inference from `Live.py`
-def websocket_process_frames(frame_data: bytes | io.BytesIO):
+def websocket_process_frames(analyzer, frame_data: bytes | io.BytesIO):
     """
     Process a single frame for inference.
 

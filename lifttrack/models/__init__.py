@@ -72,6 +72,23 @@ class ExerciseData(BaseModel):
     frame: str
 
 
+class Exercise(BaseModel):
+    """
+    Model for exercise data where the exercise name is the direct parent
+    of the exercise data
+    """
+    rdl: Optional[ExerciseData] = None
+    shoulder_press: Optional[ExerciseData] = None
+    bench_press: Optional[ExerciseData] = None
+    deadlift: Optional[ExerciseData] = None
+    # Add other exercises as needed
+
+    def set_exercise_data(self, exercise_name: str, data: ExerciseData):
+        """Helper method to set exercise data for a specific exercise"""
+        setattr(self, exercise_name.lower(), data)
+
+
 class Progress(BaseModel):
     username: str
-    exercise: Dict[str, Dict[str, ExerciseData]]  # exercise name -> date -> exercise data
+    exercise: Exercise
+    

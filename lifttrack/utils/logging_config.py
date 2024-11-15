@@ -24,14 +24,22 @@ def setup_logger(logger_name: str, log_file: str) -> logging.Logger:
     logger = logging.getLogger(logger_name)
     logger.setLevel(logging.INFO)
     
-    # Create file handler
-    handler = logging.FileHandler(os.path.join(logs_dir, log_file))
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
+     # Create file handler (captures all levels)    
+    file_handler = logging.FileHandler(os.path.join(logs_dir, log_file))
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(file_formatter)
+    
+    # Create console handler (captures WARNING and above)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_formatter = logging.Formatter('%(levelname)s - %(message)s')
+    console_handler.setFormatter(console_formatter)
     
     # Add handler if it doesn't exist
     if not logger.handlers:
-        logger.addHandler(handler)
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
     
     return logger 
 

@@ -12,11 +12,11 @@ from lifttrack.v2.comvis.object_track import process_frames_and_get_annotations
 from lifttrack.v2.comvis.features import extract_joint_angles, extract_movement_patterns, calculate_speed, extract_body_alignment, calculate_stability
 from lifttrack.v2.comvis.progress import calculate_form_accuracy
 
-from lifttrack.models import ExerciseData, Features
+from lifttrack.models import Exercise, ExerciseData, Features
 from lifttrack.dbhandler.rtdbHelper import rtdb
 
 router = APIRouter()
-logger = setup_logger("router", "lifttrack_websocket.log")
+logger = setup_logger("websocket", "protocols.log")
 
 
 # API Endpoint [Frame Operations]
@@ -51,7 +51,7 @@ async def websocket_inference(websocket: WebSocket):
 
             # Process frame in thread pool to avoid blocking
             (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
-                None, websocket_process_frames, frame_byte
+                None, websocket_process_frames, model, frame_byte
             )
 
             # Encode and send result
@@ -84,6 +84,7 @@ async def websocket_endpoint(
     await websocket.accept()
     
     frames_buffer = []  # Initialize buffer
+    exercise_payload = {}
     
     try:
         if not username or not exercise_name:
@@ -150,17 +151,14 @@ async def websocket_endpoint(
                 # Add frame to buffer for analysis
                 frames_buffer.append(frame)
                 frame_count += 1
-                logger.info(f"Frame count: {frame_count}")
 
                 # Process analysis every 30th frame
                 if frame_count % 30 == 0:
                     try:
+                        logger.info(f"Frame count: {frame_count}")
                         # 1. Get MoveNet and Roboflow inference
                         _, keypoints = analyze_frame(frame)
-                        logger.info(f"Got MoveNet results")
-                        
                         roboflow_results = process_frames_and_get_annotations(frame)
-                        logger.info(f"Got Roboflow results")
                         
                         if not roboflow_results:
                             predictions = []
@@ -169,7 +167,6 @@ async def websocket_endpoint(
 
                         # 2. Get predicted class
                         predicted_class_name = predict_class(model, frames_buffer[-30:])
-                        logger.info(f"Got predicted class")
 
                         # 3. Extract features
                         features = {
@@ -182,7 +179,6 @@ async def websocket_endpoint(
 
                         # 4. Calculate accuracy and get suggestions
                         accuracy, suggestions = calculate_form_accuracy(features, predicted_class_name)
-                        logger.info(f"Got form accuracy and suggestions")
 
                         # Create Features object
                         features_obj = Features(
@@ -194,18 +190,21 @@ async def websocket_endpoint(
                             stability=features['stability']
                         )
 
-                        # Create ExerciseData object without explicit date parameter
+                        # Create ExerciseData object
                         exercise_data = ExerciseData(
                             suggestion=suggestions[0] if suggestions else "No suggestions",
                             features=features_obj,
                             frame=f"frame_{frame_count}"
                         )
+                        
+                        # Create Exercise object and set the specific exercise data
+                        exercise = Exercise()
+                        exercise.set_exercise_data(exercise_name, exercise_data)
 
                         # Store in database
                         rtdb.put_progress(
                             username=username,
-                            exercise_name=exercise_name.lower(),
-                            exercise_data=exercise_data
+                            exercise=exercise
                         )
 
                         # Send analysis results
