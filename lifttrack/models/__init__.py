@@ -60,13 +60,13 @@ class Features(BaseModel):
     objects: str
     joint_angles: Dict[str, Any]
     movement_pattern: str
-    speeds: str
+    speeds: dict
     body_alignment: Any
-    stability: str
+    stability: float
 
 
 class ExerciseData(BaseModel):
-    date: datetime = datetime.datetime.now()
+    date: str = datetime.now().isoformat()
     suggestion: str
     features: Features
     frame: str

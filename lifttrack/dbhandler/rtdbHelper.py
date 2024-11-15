@@ -116,33 +116,11 @@ class RTDBHelper:
             exercise_data: ExerciseData object containing the progress data
         """
         try:
-            # Get existing progress data or create new Progress model
-            existing_data = self.get_progress(username)
-            if not existing_data:
-                existing_data = Progress(
-                    username=username,
-                    exercise={}
-                ).model_dump()
-                
-            # Format date as mm/dd/YYYY for storage key
-            date_str = exercise_data.date.strftime("%m/%d/%Y")
-            
-            # Ensure the exercise and date structure exists
-            if exercise_name not in existing_data["exercise"]:
-                existing_data["exercise"][exercise_name] = {}
-            if date_str not in existing_data["exercise"][exercise_name]:
-                existing_data["exercise"][exercise_name][date_str] = []
-            
-            # Append the new exercise data while preserving the datetime in ISO format
-            exercise_data_dict = exercise_data.model_dump()
-            exercise_data_dict["date"] = exercise_data.date.isoformat()  # Store datetime in ISO format
-            existing_data["exercise"][exercise_name][date_str].append(exercise_data_dict)
-            
             # Save to database
             snapshot = self.__db.put(
                 url='/progress',
                 name=username,
-                data=existing_data
+                data=exercise_data.model_dump()
             )
             
             if snapshot is None:
