@@ -145,3 +145,18 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error processing user data"
         )
+        
+
+async def check_password_update(user: User = Depends(validate_input)):
+    """
+    Dependency to check if password is being updated in user data.
+    Returns tuple of (user, is_password_update).
+    """
+    existing_user_data = rtdb.get_data(user.username)
+    if not existing_user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+    is_password_update = existing_user_data.get("password") != user.password
+    return user, is_password_update

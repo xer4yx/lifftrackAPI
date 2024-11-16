@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from lifttrack.auth import get_password_hash, verify_password, validate_input
+from lifttrack.auth import check_password_update, get_password_hash, verify_password, validate_input
 from lifttrack.models import User
 from lifttrack.dbhandler import rtdb
 from lifttrack.utils.logging_config import setup_logger
@@ -119,7 +119,11 @@ async def get_user_data(request: Request, username: str, data: Optional[str] = N
 
 @router.put("/user/{username}")
 @limiter.limit("10/minute")
-async def update_user_data(username: str, user: User, request: Request):
+async def update_user_data(
+    username: str, 
+    request: Request,
+    update_data: tuple[User, bool] = Depends(check_password_update)
+    ):
     """
     Endpoint to update user data in the database.
 
@@ -129,20 +133,12 @@ async def update_user_data(username: str, user: User, request: Request):
         request: FastAPI Request object.
     """
     try:
-        user_data = {
-            "id": user.id,
-            "fname": user.fname,
-            "lname": user.lname,
-            "username": user.username,
-            "phoneNum": user.phoneNum,
-            "email": user.email,
-            "password": get_password_hash(user.password),
-            "pfp": user.pfp,
-            "isAuthenticated": user.isAuthenticated,
-            "isDeleted": user.isDeleted
-        }
+        user, is_password_update = update_data
+        
+        if is_password_update:
+            user.password = get_password_hash(user.password)
 
-        snapshot = rtdb.update_data(username, user_data)
+        snapshot = rtdb.update_data(username, user.model_dump())
 
         if not snapshot:
             raise HTTPException(
