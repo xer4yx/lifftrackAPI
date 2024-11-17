@@ -30,44 +30,59 @@ hash_context = CryptContext(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+existing_usernames = set()
+try:
+    users = rtdb.get_all_data()
+    existing_usernames.update(username for username in users.keys())
+    logger.info(f"Username cache initialized with {len(existing_usernames)} entries")
+except Exception as e:
+    logger.error(f"Failed to initialize username cache: {e}")
+    
+    
+# Add these helper functions to manage the cache
+def add_to_username_cache(username: str):
+    """Add a username to the cache."""
+    existing_usernames.add(username)
 
-def validate_input(user: User):
+
+def remove_from_username_cache(username: str):
+    """Remove a username from the cache."""
+    existing_usernames.discard(username)  # Using discard instead of remove to avoid KeyError
+
+
+def validate_input(user: User, is_update: bool = False):
     """Validates user input and returns the validated user object."""
     password_pattern = r'^(?=.*[A-Z])(?=.*\d)(?=.*[@$])[A-Za-z\d@$]{8,12}$'
     mobileno_pattern = r'^(?:\+63\d{10}|09\d{9})$'
     email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    
+    if not is_update:
+        if user.username in existing_usernames:
+            logger.info(f"Attempt to create duplicate username: {user.username}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already exists."
+            )
 
     if re.match(password_pattern, user.password) is None:
-        logger.warning(f"Password validation failed for user: {user.username}")
         raise HTTPException(
             status_code=status.HTTP_406_NOT_ACCEPTABLE,
             detail="Password must be 8-12 characters long, with at least one uppercase letter, one digit, and one special character."
         )
 
     if re.match(mobileno_pattern, user.phoneNum) is None:
-        logger.warning(f"Mobile number validation failed for user: {user.username}")
         raise HTTPException(
             status_code=status.HTTP_406_NOT_ACCEPTABLE,
             detail="Invalid mobile number."
         )
 
     if re.match(email_pattern, user.email) is None:
-        logger.warning(f"Email validation failed for user: {user.username}")
         raise HTTPException(
             status_code=status.HTTP_406_NOT_ACCEPTABLE,
             detail="Invalid email address."
         )
-    
-    # Check if user already exists
-    existing_user = rtdb.get_data(user.username)
-    if existing_user:
-        logger.info(f"Attempt to create duplicate username: {user.username}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already exists."
-        )
 
-    logger.info(f"User input validated successfully for user: {user.username}")
+    logger.info(f"{user.username} updated profile information.")
     return user  # Return the validated user object
 
 
@@ -99,13 +114,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        if username is None:
-            logger.warning("Token payload missing \'sub\'")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
         token_data = TokenData(username=username)
     except JWTError as e:
         logger.error(f"JWT decoding error: {e}")
@@ -147,7 +155,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         )
         
 
-async def check_password_update(user: User = Depends(validate_input)):
+async def check_password_update(user: User = Depends(lambda user: validate_input(user, is_update=True))):
     """
     Dependency to check if password is being updated in user data.
     Returns tuple of (user, is_password_update).
@@ -160,3 +168,12 @@ async def check_password_update(user: User = Depends(validate_input)):
         )
     is_password_update = existing_user_data.get("password") != user.password
     return user, is_password_update
+
+
+def verify_and_update_password(plain_password, hashed_password):
+    verified, updated = hash_context.verify_and_update(secret=plain_password, hash=hashed_password)
+    
+    if updated is not None:
+        logger.info(f"Hash scheme updated for {hash_context.default_scheme()}")
+        
+    return verified

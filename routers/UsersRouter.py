@@ -7,7 +7,14 @@ from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from lifttrack.auth import check_password_update, get_password_hash, verify_password, validate_input
+from lifttrack.auth import (
+    check_password_update, 
+    get_password_hash, 
+    remove_from_username_cache, 
+    add_to_username_cache,
+    verify_password, 
+    validate_input
+)
 from lifttrack.models import User
 from lifttrack.dbhandler import rtdb
 from lifttrack.utils.logging_config import setup_logger
@@ -23,7 +30,10 @@ limiter = Limiter(key_func=get_remote_address)
 
 @router.put("/create")
 @limiter.limit("5/minute")
-async def create_user(request: Request, user: User = Depends(validate_input)):
+async def create_user(
+    request: Request, 
+    user: User = Depends(lambda user: validate_input(user, is_update=False))
+    ):
     """
     Endpoint to create a new user in the Firebase Realtime Database.
 
@@ -47,6 +57,7 @@ async def create_user(request: Request, user: User = Depends(validate_input)):
 
         # Attempt to add the user to the database
         rtdb.put_data(user_data)
+        add_to_username_cache(user.username)
 
         return JSONResponse(
             content={"msg": "User created."},
@@ -239,6 +250,8 @@ async def delete_user(username: str, request: Request):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="User deletion failed."
             )
+            
+        remove_from_username_cache(username)
 
         return JSONResponse(
             content={"msg": "User deleted."},

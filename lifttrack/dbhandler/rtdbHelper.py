@@ -60,6 +60,12 @@ class RTDBHelper:
         except Exception as e:
             logger.exception(f"Exception in get_data for user {username}: {e}")
             raise
+        
+    def get_all_data(self):
+        """
+        Retrieves all user data from the database.
+        """
+        return self.__db.get('/users', None)
 
     def update_data(self, username, user_data):
         """
