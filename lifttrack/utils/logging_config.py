@@ -83,7 +83,7 @@ def start_resource_monitoring(logger=None, target=None, interval=30):
     return resource_thread 
 
 
-def log_network_io(logger, endpoint: str, response_status: int):
+def log_network_io(logger, endpoint: str, method: str, response_status: int):
     """
     Logs network I/O counters when an endpoint is called.
     
@@ -95,15 +95,8 @@ def log_network_io(logger, endpoint: str, response_status: int):
     try:
         net_io = psutil.net_io_counters()
         logger.info(
-            f"Network I/O - Endpoint: {endpoint} | Status: {response_status} | "
-            f"Bytes Sent: {net_io.bytes_sent} | "
-            f"Bytes Recv: {net_io.bytes_recv} | "
-            f"Packets Sent: {net_io.packets_sent} | "
-            f"Packets Recv: {net_io.packets_recv} | "
-            f"Err In: {net_io.errin} | "
-            f"Err Out: {net_io.errout} | "
-            f"Drop In: {net_io.dropin} | "
-            f"Drop Out: {net_io.dropout}"
+            f"Network I/O - Method {method} | Status: {response_status} | Endpoint: {endpoint} \n"
+            f"Bytes Sent: {net_io.bytes_sent} | Bytes Recv: {net_io.bytes_recv}"
         )
     except Exception as e:
         logger.error(f"Error logging network I/O: {str(e)}")

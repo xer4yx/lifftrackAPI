@@ -1,7 +1,7 @@
 import threading
 
 from lifttrack import timedelta, threading
-from lifttrack.utils.logging_config import setup_logger
+from lifttrack.utils.logging_config import log_network_io, setup_logger
 from lifttrack.dbhandler.rtdbHelper import rtdb
 from lifttrack.models import User, Token, AppInfo, LoginForm
 from lifttrack.auth import (
@@ -45,12 +45,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS Configuration
-server_origin = [
-    'http://192.168.1.233',
-    'http://localhost:8000',
-    'http://lifttrack.ondigitalocean.com',
-    'http://lifttrack.ondigitalocean.com:8000'
-]
+server_origin = ["*"]
 server_method = ["PUT", "GET", "DELETE"]
 server_header = ["*"]
 
@@ -71,12 +66,11 @@ latest_frame = None
 # Initialize loggers
 # Configure logging for main.py
 logger = setup_logger("main", "lifttrack_main.log")
-cpu_mem_logger = setup_logger("cpu-mem", "server_resoruce.log")
 system_logger = setup_logger("system", "server_resource.log")
-network_logger = setup_logger("network", "server_resource.log")
+network_logger = setup_logger("network", "network.log")
 
 # Start resource monitoring
-start_resource_monitoring(system_logger, log_cpu_and_mem_usage, 20)
+start_resource_monitoring(system_logger, log_cpu_and_mem_usage, 60)
 
 # API Endpoint [ROOT]
 @app.get("/")
@@ -84,20 +78,30 @@ start_resource_monitoring(system_logger, log_cpu_and_mem_usage, 20)
 async def read_root(request: Request):
     """Lifttrack API root endpoint."""
     try:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Welcome to LiftTrack!"},
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in read_root: {e}")
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in read_root: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
 
 
@@ -110,20 +114,30 @@ async def get_app_info(request: Request):
         # Construct the AppInfo object here or retrieve it from a source
         appinfo = AppInfo()
         
-        return JSONResponse(
+        response = JSONResponse(
             content=appinfo,
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in get_app_info: {e}")
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in get_app_info: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
 
 
@@ -139,6 +153,7 @@ async def login(login_form: LoginForm, request: Request):
         request: FastAPI Request object.
     """
     try:
+        response = None
         user_data = rtdb.get_data(login_form.username)
 
         if user_data is None:
@@ -153,20 +168,30 @@ async def login(login_form: LoginForm, request: Request):
                 detail="Invalid username or password"
             )
 
-        return JSONResponse(
+        response = JSONResponse(
             content={"message": "Login successful", "success": True},
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in login: {e}")
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in login: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
 
 
@@ -181,6 +206,7 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
         request: FastAPI Request object.
     """
     try:
+        response = None
         user = rtdb.get_data(form_data.username)
 
         if user is None or not verify_password(form_data.password, user.get("password", "")):
@@ -193,20 +219,30 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
         access_token = create_access_token(
             data={"sub": form_data.username}, expires_delta=access_token_expires
         )
-        return JSONResponse(
+        response = JSONResponse(
             content={"access_token": access_token, "token_type": "bearer"},
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in login_for_access_token: {e}")
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in login_for_access_token: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
 
 
@@ -217,21 +253,32 @@ async def logout(request: Request, current_user: User = Depends(get_current_user
     Endpoint to logout user and invalidate their token.
     """
     try:
+        response = None
         # You might want to add the token to a blacklist here if implementing token revocation
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Successfully logged out"},
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in logout: {e}")
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in logout: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
 
 
@@ -247,6 +294,7 @@ async def read_users_me(request: Request, current_user: User = Depends(get_curre
         request: FastAPI Request object.
     """
     try:
+        response = None
         # Convert User model to dictionary
         user_dict = {
             "id": current_user.id,
@@ -260,20 +308,30 @@ async def read_users_me(request: Request, current_user: User = Depends(get_curre
             "isAuthenticated": current_user.isAuthenticated,
             "isDeleted": current_user.isDeleted
         }
-        return JSONResponse(
+        response = JSONResponse(
             content=user_dict,
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in read_users_me: {e}")
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in read_users_me: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
 
 
