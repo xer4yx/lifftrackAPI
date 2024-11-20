@@ -1,6 +1,6 @@
 import threading
 
-from lifttrack import timedelta, threading
+from lifttrack import timedelta, threading, network_logger
 from lifttrack.utils.logging_config import log_network_io, setup_logger
 from lifttrack.dbhandler.rtdbHelper import rtdb
 from lifttrack.models import User, Token, AppInfo, LoginForm
@@ -46,7 +46,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS Configuration
 server_origin = ["*"]
-server_method = ["PUT", "GET", "DELETE"]
+server_method = ["PUT", "GET", "DELETE", "POST"]
 server_header = ["*"]
 
 # Modify CORS middleware to include additional security headers
@@ -67,7 +67,6 @@ latest_frame = None
 # Configure logging for main.py
 logger = setup_logger("main", "lifttrack_main.log")
 system_logger = setup_logger("system", "server_resource.log")
-network_logger = setup_logger("network", "network.log")
 
 # Start resource monitoring
 start_resource_monitoring(system_logger, log_cpu_and_mem_usage, 60)

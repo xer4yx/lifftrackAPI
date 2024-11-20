@@ -1,17 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from typing import Optional
 
+from lifttrack import network_logger
 from lifttrack.models import User, ExerciseData
 from lifttrack.auth import get_current_user
 from lifttrack.dbhandler.rtdbHelper import rtdb
-from lifttrack.utils.logging_config import setup_logger
+from lifttrack.utils.logging_config import setup_logger, log_network_io
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 # Configure logging
-logger = setup_logger("progress_routes", "lifttrack_progress.log")
+logger = setup_logger("progress_routes", "router.log")
 
 # Initialize router
 router = APIRouter(
@@ -36,6 +39,7 @@ async def create_progress(
     Endpoint to create or append exercise progress data.
     """
     try:
+        reponse = None
         if username != current_user.username:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -44,25 +48,36 @@ async def create_progress(
 
         rtdb.put_progress(username, exercise, exercise_data)
         
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Progress saved successfully"},
             status_code=status.HTTP_201_CREATED
         )
+        return response
     except ValidationError as vale:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": str(vale)},
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in create_progress: {e}")
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in create_progress: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
 
 @router.get("/{username}")
@@ -77,6 +92,7 @@ async def get_progress(
     Endpoint to retrieve progress data.
     """
     try:
+        response = None
         if username != current_user.username:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -90,20 +106,30 @@ async def get_progress(
                 detail="Progress data not found"
             )
             
-        return JSONResponse(
+        response = JSONResponse(
             content=progress,
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in get_progress: {e}")
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in get_progress: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
 
 @router.delete("/{username}")
@@ -118,6 +144,7 @@ async def delete_progress(
     Endpoint to delete progress data.
     """
     try:
+        response = None
         if username != current_user.username:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -131,18 +158,28 @@ async def delete_progress(
                 detail="Progress deletion failed"
             )
             
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Progress deleted successfully"},
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in delete_progress: {e}")
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in delete_progress: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )

@@ -13,18 +13,19 @@ from lifttrack.auth import (
     remove_from_username_cache, 
     add_to_username_cache,
     verify_password, 
-    validate_input
+    validate_input,
+    network_logger
 )
 from lifttrack.models import User
 from lifttrack.dbhandler import rtdb
-from lifttrack.utils.logging_config import setup_logger
+from lifttrack.utils.logging_config import setup_logger, log_network_io
 
 router = APIRouter(
     prefix="/user",
     tags=["user"],
     responses={404: {"description": "Not found"}}
 )
-logger = setup_logger("user_router", ".log")
+logger = setup_logger("user_router", "router.log")
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -42,6 +43,7 @@ async def create_user(
         request: FastAPI Request object.
     """
     try:
+        response = None
         user_data = {
             "id": user.id,
             "fname": user.fname,
@@ -59,34 +61,46 @@ async def create_user(
         rtdb.put_data(user_data)
         add_to_username_cache(user.username)
 
-        return JSONResponse(
+        reponse = JSONResponse(
             content={"msg": "User created."},
             status_code=status.HTTP_201_CREATED
         )
+        return response
     except ValidationError as vale:
         # Handle errors raised by Pydantic
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": str(vale)},
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
         )
+        return response
     except ValueError as ve:
         # Handle errors raised by RTDBHelper
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": str(ve)},
             status_code=status.HTTP_400_BAD_REQUEST
         )
+        return reponse
     except HTTPException as httpe:
         # Handle FastAPI-specific HTTP exceptions
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in create_user: {e}")
         # Handle unexpected exceptions
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in create_user: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
 
 
@@ -102,6 +116,7 @@ async def get_user_data(request: Request, username: str, data: Optional[str] = N
         request: FastAPI Request object.
     """
     try:
+        response = None
         user_data = rtdb.get_data(username, data)
 
         if user_data is None:
@@ -110,23 +125,32 @@ async def get_user_data(request: Request, username: str, data: Optional[str] = N
                 detail="User not found."
             )
 
-        return JSONResponse(
+        response = JSONResponse(
             content=user_data,
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in get_user_data: {e}")
         # Handle unexpected exceptions
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
+        logger.exception(f"Error in get_user_data: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
+        )
 
 @router.put("/user/{username}")
 @limiter.limit("10/minute")
@@ -144,6 +168,7 @@ async def update_user_data(
         request: FastAPI Request object.
     """
     try:
+        response = None
         user, is_password_update = update_data
         
         if is_password_update:
@@ -157,22 +182,33 @@ async def update_user_data(
                 detail="User update failed."
             )
 
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "User updated."},
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in update_user_data: {e}")
         # Handle unexpected exceptions
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+        logger.exception(f"Error in update_user_data: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
+        )
+    
 
 
 @router.put("/user/{username}/change-pass")
@@ -187,6 +223,7 @@ async def change_password(username: str, user: User, request: Request):
         request: FastAPI Request object.
     """
     try:
+        response = None
         hashed_pass = rtdb.get_data(user.username, "password")
 
         if not hashed_pass or not verify_password(user.password, hashed_pass):
@@ -215,21 +252,31 @@ async def change_password(username: str, user: User, request: Request):
                 detail="Password change failed."
             )
 
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Password changed."},
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in change_password: {e}")
         # Handle unexpected exceptions
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in change_password: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
 
 
@@ -244,6 +291,7 @@ async def delete_user(username: str, request: Request):
         request: FastAPI Request object.
     """
     try:
+        response = None
         deleted = rtdb.delete_data(username)
         if not deleted:
             raise HTTPException(
@@ -253,19 +301,29 @@ async def delete_user(username: str, request: Request):
             
         remove_from_username_cache(username)
 
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "User deleted."},
             status_code=status.HTTP_200_OK
         )
+        return response
     except HTTPException as httpe:
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
+        return response
     except Exception as e:
-        logger.exception(f"Error in delete_user: {e}")
         # Handle unexpected exceptions
-        return JSONResponse(
+        response = JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        logger.exception(f"Error in delete_user: {e}")
+        return response
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
         )
