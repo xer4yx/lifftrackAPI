@@ -9,7 +9,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from lifttrack import config
-from lifttrack.dbhandler.rtdbHelper import rtdb
+from lifttrack.dbhandler.rest_rtdb import rtdb
 from lifttrack.models import User, TokenData
 from lifttrack.utils.logging_config import setup_logger
 

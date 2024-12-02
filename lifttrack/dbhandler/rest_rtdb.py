@@ -7,7 +7,7 @@ from lifttrack.models import Exercise, Progress, ExerciseData
 
 
 # Logging Configuration
-logger = setup_logger("rtdbHelper", "lifttrack_db.log")
+logger = setup_logger("rtdbHelper", "lifttrack_db.log") 
 
 
 class RTDBHelper:

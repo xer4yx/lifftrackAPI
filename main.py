@@ -2,7 +2,7 @@ import threading
 
 from lifttrack import timedelta, threading, network_logger
 from lifttrack.utils.logging_config import log_network_io, setup_logger
-from lifttrack.dbhandler.rtdbHelper import rtdb
+from lifttrack.dbhandler.rest_rtdb import rtdb
 from lifttrack.models import User, Token, AppInfo, LoginForm
 from lifttrack.auth import (
     create_access_token,
@@ -142,7 +142,7 @@ async def get_app_info(request: Request):
 
 # API Endpoint [Authentication Operations]
 @app.post("/login")
-@limiter.limit("10/minute")  # Limit login attempts
+@limiter.limit("3/minute")  # Limit login attempts
 async def login(login_form: LoginForm, request: Request):
     """
     API endpoint for user login.

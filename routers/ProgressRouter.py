@@ -4,7 +4,7 @@ from typing import Optional
 from lifttrack import network_logger
 from lifttrack.models import User, ExerciseData
 from lifttrack.auth import get_current_user
-from lifttrack.dbhandler.rtdbHelper import rtdb
+from lifttrack.dbhandler.rest_rtdb import rtdb
 from lifttrack.utils.logging_config import setup_logger, log_network_io
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status

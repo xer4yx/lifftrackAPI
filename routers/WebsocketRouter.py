@@ -13,7 +13,7 @@ from lifttrack.v2.comvis.features import extract_joint_angles, extract_movement_
 from lifttrack.v2.comvis.progress import calculate_form_accuracy
 
 from lifttrack.models import Exercise, ExerciseData, Features
-from lifttrack.dbhandler.rtdbHelper import rtdb
+from lifttrack.dbhandler.rest_rtdb import rtdb
 
 router = APIRouter()
 logger = setup_logger("websocket", "protocols.log")
