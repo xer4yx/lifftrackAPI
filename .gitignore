@@ -1,9 +1,11 @@
 *.ini
+*.yml
 ./idea
 
 __pycache__/
 
 .idea/
+.env
 
 model/
 tests/res/
@@ -14,3 +16,4 @@ logs/
 
 *.jpg
 *.png
+*.json
