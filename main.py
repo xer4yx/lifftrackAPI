@@ -2,6 +2,7 @@ import threading
 
 from lifttrack import timedelta, threading, network_logger
 from lifttrack.utils.logging_config import log_network_io, setup_logger
+from lifttrack.utils.syslogger import log_cpu_and_mem_usage, start_resource_monitoring
 from lifttrack.dbhandler.rest_rtdb import rtdb
 from lifttrack.models import User, Token, AppInfo, LoginForm
 from lifttrack.auth import (
@@ -10,7 +11,6 @@ from lifttrack.auth import (
     get_current_user,
     verify_password
 )
-
 
 from fastapi import (
     FastAPI, 
@@ -28,16 +28,22 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-from routers.WebsocketRouter import router as websocket_router
+from routers.UsersRouter import router as users_router
 from routers.ProgressRouter import router as progress_router
-from lifttrack.utils.syslogger import log_cpu_and_mem_usage, start_resource_monitoring
+from routers.WebsocketRouter import router as websocket_router
+
+from routers.v2.UsersRouter import router as v2_users_router
 
 # Initialize FastAPI app
 app = FastAPI()
 
-# Include the websocket router
+# v1 API Routers
+app.include_router(users_router)
 app.include_router(progress_router)
 app.include_router(websocket_router)
+
+# v2 API Routers
+app.include_router(v2_users_router)
 
 # Initialize Limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
