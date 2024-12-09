@@ -5,7 +5,7 @@ from inference_sdk import InferenceHTTPClient
 from lifttrack import config
 from lifttrack.comvis.tensor import check_docker_container_status
 from lifttrack.utils.logging_config import setup_logger
-from lifttrack.v2.comvis.Movenet import analyze_frame
+from lifttrack.models import Object
 
 container_logger = setup_logger("docker-container", "container.log")
 comvis_logger = setup_logger("roboflow-v2", "comvis.log")
@@ -56,8 +56,20 @@ def process_frames_and_get_annotations(frame):
         # Run Roboflow inference for object detection
         roboflow_results = client.infer(frame, model_id=f"{project_id}/{model_version}")  # Send the image directly
         comvis_logger.info(f"Received Roboflow Inference: {roboflow_results}")
-        return roboflow_results
+        
+        predictions = [Object(**pred).model_dump() for pred in roboflow_results]
+        return predictions
         
     except Exception as e:
         print(f"Error during object detection: {e}")
         return None 
+    
+
+class ObjectTracker:
+    def __init__(self) -> None:
+        self.__client
+        self.__project_id
+        self.__model_version
+        
+    def process_frames_and_get_annotations(self, frame):
+        pass

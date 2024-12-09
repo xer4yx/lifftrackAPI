@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Optional, Union, Dict, Any
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, Field
 
 
 class User(BaseModel):
@@ -21,18 +21,6 @@ class User(BaseModel):
 class LoginForm(BaseModel):
     username: str
     password: str
-
-    @validator('username')
-    def validate_username(cls, v):
-        if not v:
-            raise ValueError("Username cannot be empty.")
-        return v
-
-    @validator('password')
-    def validate_password_not_empty(cls, v):
-        if not v:
-            raise ValueError("Password cannot be empty.")
-        return v
 
 
 class Token(BaseModel):
@@ -56,8 +44,18 @@ class Frame(BaseModel):
     image: bytes
 
 
+class Object(BaseModel):
+    x: float
+    y: float
+    width: float
+    height: float
+    confidence: float
+    class_name: str = Field(alias="class")
+    classs_id: Optional[int] = None
+
+
 class Features(BaseModel):
-    objects: str
+    objects: Object
     joint_angles: Dict[str, Any]
     movement_pattern: str
     speeds: dict

@@ -84,7 +84,6 @@ async def websocket_endpoint(
     await websocket.accept()
     
     frames_buffer = []  # Initialize buffer
-    exercise_payload = {}
     
     try:
         if not username or not exercise_name:
@@ -160,10 +159,14 @@ async def websocket_endpoint(
                         _, keypoints = analyze_frame(frame)
                         roboflow_results = process_frames_and_get_annotations(frame)
                         
-                        if not roboflow_results:
-                            predictions = []
-                        else:
-                            predictions = roboflow_results.get('predictions', [])
+                        # if not roboflow_results:
+                        #     predictions = []
+                        # else:
+                        #     predictions = roboflow_results.get('predictions', [])
+                        
+                        predictions = {}
+                        if roboflow_results:
+                            predictions = {prediction for prediction in roboflow_results}
 
                         # 2. Get predicted class
                         predicted_class_name = predict_class(model, frames_buffer[-30:])
@@ -182,7 +185,7 @@ async def websocket_endpoint(
 
                         # Create Features object
                         features_obj = Features(
-                            objects=str(predictions),
+                            objects=predictions,
                             joint_angles=features['joint_angles'],
                             movement_pattern=predicted_class_name,
                             speeds=features['speeds'],

@@ -1,8 +1,10 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
+
+from typing import Any, Dict, Optional, List, Callable
 from concurrent.futures import ThreadPoolExecutor
 import threading
-from typing import Any, Dict, Optional, List, Callable
+
 
 class FirebaseDBHelper:
     """
@@ -18,7 +20,11 @@ class FirebaseDBHelper:
     _instance = None
     _lock = threading.Lock()
     
-    def __new__(cls, credentials_path: Optional[str] = None):
+    def __new__(
+        cls, 
+        credentials_path: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None
+    ):
         """
         Implement singleton pattern to ensure only one Firebase app instance.
         
@@ -32,7 +38,10 @@ class FirebaseDBHelper:
                     # Initialize the Firebase app if credentials are provided
                     if credentials_path:
                         cred = credentials.Certificate(credentials_path)
-                        firebase_admin.initialize_app(cred)
+                        firebase_admin.initialize_app(
+                            credential=cred,
+                            options=options
+                        )
                     
                     # Create the singleton instance
                     cls._instance = super().__new__(cls)
