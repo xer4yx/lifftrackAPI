@@ -1,0 +1,22 @@
+services:
+  roboflow:
+    image: roboflow/roboflow-inference-server-cpu:latest
+    ports:
+      - "9001:9001"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  fastapi:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      roboflow:
+        condition: service_healthy  # Wait until Roboflow passes health check
+    environment:
+      ROBOSERVER_HOST: "roboflow"
+      ROBOSERVER_PORT: "9001"
