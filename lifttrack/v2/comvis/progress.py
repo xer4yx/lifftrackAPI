@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import base64
 from io import BytesIO
-from lifttrack.v2.comvis.Live import predict_class
 from lifttrack.utils.logging_config import setup_logger
 
 logger = setup_logger("progress-v2", "comvis.log")

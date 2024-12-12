@@ -1,6 +1,6 @@
 import numpy as np
 import math
-from lifttrack.v2.comvis.object_track import process_frames_and_get_annotations
+
 
 # Function to compute the angle between three points
 def calculate_angle(a, b, c):
@@ -23,6 +23,7 @@ def calculate_angle(a, b, c):
     # Return the angle in degrees
     angle = np.arccos(cos_angle) * (180.0 / np.pi)
     return angle
+
 
 # Function to calculate joint angles for all pairs of keypoints
 def extract_joint_angles(keypoints):
@@ -57,6 +58,7 @@ def extract_joint_angles(keypoints):
     
     return angles
 
+
 # Function to compute movement patterns (basic example: displacement)
 def extract_movement_patterns(keypoints, previous_keypoints):
     """
@@ -80,6 +82,7 @@ def extract_movement_patterns(keypoints, previous_keypoints):
     
     return displacement
 
+
 # Function to compute speed of joints or weights
 def calculate_speed(displacement, time_delta=1.0):
     """
@@ -96,6 +99,7 @@ def calculate_speed(displacement, time_delta=1.0):
     for joint in displacement:
         speed[joint] = displacement[joint] / time_delta
     return speed
+
 
 # Function to calculate body alignment (e.g., horizontal angle between shoulders and hips)
 def extract_body_alignment(keypoints):
@@ -114,6 +118,7 @@ def extract_body_alignment(keypoints):
         return (shoulder_angle, hip_angle)
     
     return None
+
 
 # Function to calculate stability (e.g., variance in body position or keypoint consistency)
 def calculate_stability(keypoints, previous_keypoints):
@@ -135,5 +140,3 @@ def calculate_stability(keypoints, previous_keypoints):
             total_displacement += np.linalg.norm(curr_pos - prev_pos)
     
     return total_displacement
-
-

@@ -1,6 +1,5 @@
 import os
 import cv2
-from lifttrack.v2.comvis.object_track import process_frames_and_get_annotations
 from lifttrack.v2.comvis.features import (
     extract_joint_angles,
     extract_movement_patterns,
@@ -10,12 +9,12 @@ from lifttrack.v2.comvis.features import (
 )
 
 
-def analyze_annotations(frames_directory, analyze_frame_function):
+def analyze_annotations(frames_directory, analyze_frame_function, object_tracker):
     """
     Processes frames to extract annotations and computes features based on those annotations.
     """
     # Step 1: Process frames and get annotations
-    annotations, final_annotated_frame = process_frames_and_get_annotations(frames_directory, analyze_frame_function)
+    annotations, final_annotated_frame = object_tracker.process_frames_and_get_annotations(frames_directory, analyze_frame_function)
     
     if not annotations:
         return [], None
