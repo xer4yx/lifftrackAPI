@@ -17,3 +17,6 @@ logs/
 *.jpg
 *.png
 *.json
+Dockerfile
+
+requirements.txt
