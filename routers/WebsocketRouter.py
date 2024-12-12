@@ -6,10 +6,18 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 from lifttrack.utils.logging_config import setup_logger
 from lifttrack.comvis import websocket_process_frames
-from lifttrack.v2.comvis.Live import model, predict_class
-from lifttrack.v2.comvis.Movenet import analyze_frame  # This handles 192x192 internally
-from lifttrack.v2.comvis.object_track import process_frames_and_get_annotations
-from lifttrack.v2.comvis.features import extract_joint_angles, extract_movement_patterns, calculate_speed, extract_body_alignment, calculate_stability
+from lifttrack.v2.comvis import (
+    movenet_inference, 
+    object_tracker, 
+    three_dim_inference
+)
+from lifttrack.v2.comvis.features import (
+    extract_joint_angles, 
+    extract_movement_patterns, 
+    calculate_speed, 
+    extract_body_alignment, 
+    calculate_stability
+)
 from lifttrack.v2.comvis.progress import calculate_form_accuracy
 
 from lifttrack.models import Exercise, ExerciseData, Features
@@ -32,6 +40,7 @@ async def websocket_inference(websocket: WebSocket):
     """
     await websocket.accept()
     connection_open = True
+    model = None
     while connection_open:
         try:
             # Expected format from client side is:
@@ -156,8 +165,8 @@ async def websocket_endpoint(
                     try:
                         logger.info(f"Frame count: {frame_count}")
                         # 1. Get MoveNet and Roboflow inference
-                        _, keypoints = analyze_frame(frame)
-                        roboflow_results = process_frames_and_get_annotations(frame)
+                        _, keypoints = movenet_inference.analyze_frame(frame)
+                        roboflow_results = object_tracker.process_frames_and_get_annotations(frame)
                         
                         # if not roboflow_results:
                         #     predictions = []
@@ -169,7 +178,7 @@ async def websocket_endpoint(
                             predictions = {prediction for prediction in roboflow_results}
 
                         # 2. Get predicted class
-                        predicted_class_name = predict_class(model, frames_buffer[-30:])
+                        predicted_class_name = three_dim_inference.predict_class(frames_buffer[-30:])
 
                         # 3. Extract features
                         features = {
@@ -183,9 +192,16 @@ async def websocket_endpoint(
                         # 4. Calculate accuracy and get suggestions
                         accuracy, suggestions = calculate_form_accuracy(features, predicted_class_name)
 
-                        # Create Features object
+                        # Get predictions, handling the case where object detection fails
+                        try:
+                            predictions = roboflow_results.get('predictions', []) if roboflow_results else {}
+                        except Exception as e:
+                            logger.warning(f"Object detection failed: {str(e)}")
+                            predictions = {}
+
+                        # Create Features object with empty objects if detection failed
                         features_obj = Features(
-                            objects=predictions,
+                            objects={} if not predictions else predictions,  # Empty dict if no predictions
                             joint_angles=features['joint_angles'],
                             movement_pattern=predicted_class_name,
                             speeds=features['speeds'],

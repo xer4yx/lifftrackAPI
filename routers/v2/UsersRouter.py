@@ -10,7 +10,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address, get_ipaddr
 
 router = APIRouter(
-    prefix="v2/user",
+    prefix="/v2",
     tags=["v2-user"],
     responses={404: {"description": "Not found"}}
 )

@@ -7,17 +7,17 @@ from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from lifttrack import network_logger
 from lifttrack.auth import (
     check_password_update, 
     get_password_hash, 
     remove_from_username_cache, 
     add_to_username_cache,
     verify_password, 
-    validate_input,
-    network_logger
+    validate_input
 )
 from lifttrack.models import User
-from lifttrack.dbhandler import rtdb
+from lifttrack.dbhandler.rest_rtdb import rtdb
 from lifttrack.utils.logging_config import setup_logger, log_network_io
 
 router = APIRouter(
