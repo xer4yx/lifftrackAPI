@@ -4,6 +4,8 @@ from lifttrack import config
 from lifttrack.utils.logging_config import setup_logger
 from typing import Dict, Optional
 from lifttrack.models import Exercise, Progress, ExerciseData
+from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
 
 
 # Logging Configuration
@@ -11,26 +13,53 @@ logger = setup_logger("rtdbHelper", "lifttrack_db.log")
 
 
 class RTDBHelper:
-    def __init__(self, dsn=None, authentication=None):
+    def __init__(self, dsn=None, authentication=None, max_workers=5):
         self.__dsn = config.get(section='Firebase', option='dsn') or dsn
         self.__auth = config.get(section='Firebase', option='authentication') or authentication
-        self.__db = firebase.FirebaseApplication(
-            dsn=self.__dsn,
-            authentication=(lambda: None, lambda: self.__auth)[self.__auth != 'None']()
-        )
-        logger.info("RTDBHelper initialized.")
+        self.__pool = ThreadPoolExecutor(max_workers=max_workers)
+        self.__connections = {}
+        logger.info(f"RTDBHelper initialized with {max_workers} workers.")
 
-    def put_data(self, user_data: dict[str, any]):
+    def _get_connection(self):
+        """Get or create a database connection for the current thread."""
+        import threading
+        thread_id = threading.get_ident()
+        
+        if thread_id not in self.__connections:
+            self.__connections[thread_id] = firebase.FirebaseApplication(
+                dsn=self.__dsn,
+                authentication=(lambda: None, lambda: self.__auth)[self.__auth != 'None']()
+            )
+            logger.debug(f"Created new connection for thread {thread_id}")
+        
+        return self.__connections[thread_id]
+
+    def _with_connection(func):
+        """Decorator to handle database connections."""
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            db = self._get_connection()
+            try:
+                return func(self, db, *args, **kwargs)
+            except Exception as e:
+                logger.exception(f"Database operation failed: {str(e)}")
+                raise
+        return wrapper
+
+    @_with_connection
+    def put_data(self, db, user_data: dict[str, any]):
         """
         Adds a new user to the database via HTTP PUT request.
         """
         try:
             logger.debug(f"Attempting to create user with data: {user_data}")
-            snapshot = self.__db.put(
+            future = self.__pool.submit(
+                db.put,
                 url='/users',
                 name=user_data['username'],
-                data=user_data,
+                data=user_data
             )
+            snapshot = future.result()
             if snapshot is None:
                 logger.error(f"Failed to create user: {user_data['username']}")
                 raise ValueError('User not created')
@@ -38,8 +67,9 @@ class RTDBHelper:
         except Exception as e:
             logger.exception(f"Exception in put_data for user {user_data['username']}: {e}")
             raise
-
-    def get_data(self, username, data=None):
+    
+    @_with_connection
+    def get_data(self, db, username, data=None):
         """
         Retrieves user data from the database.
 
@@ -48,7 +78,7 @@ class RTDBHelper:
         :return: User data or specific field.
         """
         try:
-            snapshot = self.__db.get(
+            snapshot = db.get(
                 url=f'/users/{username}',
                 name=data
             )
@@ -60,14 +90,16 @@ class RTDBHelper:
         except Exception as e:
             logger.exception(f"Exception in get_data for user {username}: {e}")
             raise
-        
-    def get_all_data(self):
+    
+    @_with_connection
+    def get_all_data(self, db):
         """
         Retrieves all user data from the database.
         """
-        return self.__db.get('/users', None)
+        return db.get('/users', None)
 
-    def update_data(self, username, user_data):
+    @_with_connection
+    def update_data(self, db, username, user_data):
         """
         Updates user data in the database.
 
@@ -76,7 +108,7 @@ class RTDBHelper:
         :return: Snapshot of updated data.
         """
         try:
-            snapshot = self.__db.put(
+            snapshot = db.put(
                 url=f'/users',
                 name=username,
                 data=user_data
@@ -90,7 +122,8 @@ class RTDBHelper:
             logger.exception(f"Exception in update_data for user {username}: {e}")
             raise
 
-    def delete_data(self, username):
+    @_with_connection
+    def delete_data(self, db, username):
         """
         Deletes a user from the database.
 
@@ -98,7 +131,7 @@ class RTDBHelper:
         :return: True if deleted, else False.
         """
         try:
-            deleted = self.__db.delete(
+            deleted = db.delete(
                 url=f'/users',
                 name=username
             )
@@ -111,7 +144,8 @@ class RTDBHelper:
             logger.exception(f"Exception in delete_data for user {username}: {e}")
             raise
 
-    def put_progress(self, username: str, exercise: Exercise):
+    @_with_connection
+    def put_progress(self, db, username: str, exercise: Exercise):
         """
         Adds exercise progress data for a user. New data is appended under the date,
         not updated.
@@ -123,11 +157,13 @@ class RTDBHelper:
         """
         try:
             # Save to database
-            snapshot = self.__db.put(
+            future = self.__pool.submit(
+                db.put,
                 url=f'/progress',
                 name=username,
                 data=exercise.model_dump()
             )
+            snapshot = future.result()
             
             if snapshot is None:
                 logger.error(f"Failed to save progress for user: {username}")
@@ -138,7 +174,8 @@ class RTDBHelper:
             logger.exception(f"Exception in put_progress for user {username}: {e}")
             raise
 
-    def get_progress(self, username: str, exercise_name: Optional[str] = None) -> Optional[Dict]:
+    @_with_connection
+    def get_progress(self, db, username: str, exercise_name: Optional[str] = None) -> Optional[Dict]:
         """
         Retrieves progress data from the database.
 
@@ -149,7 +186,7 @@ class RTDBHelper:
             Progress data dictionary or None
         """
         try:
-            snapshot = self.__db.get(
+            snapshot = db.get(
                 url=f'/progress/{username}',
                 name=None
             )
@@ -175,7 +212,8 @@ class RTDBHelper:
             logger.exception(f"Exception in get_progress for user {username}: {e}")
             raise
 
-    def update_progress(self, username: str, exercise_name: str, exercise_data: any):
+    @_with_connection
+    def update_progress(self, db, username: str, exercise_name: str, exercise_data: any):
         """
         Updates exercise progress data for a user.
         
@@ -190,7 +228,8 @@ class RTDBHelper:
             logger.exception(f"Exception in update_progress for user {username}: {e}")
             raise
 
-    def delete_progress(self, username: str, exercise_name: Optional[str] = None):
+    @_with_connection
+    def delete_progress(self, db, username: str, exercise_name: Optional[str] = None):
         """
         Deletes progress data from the database.
 
@@ -207,7 +246,7 @@ class RTDBHelper:
                 if existing_data and "exercise" in existing_data:
                     if exercise_name in existing_data["exercise"]:
                         del existing_data["exercise"][exercise_name]
-                        snapshot = self.__db.put(
+                        snapshot = db.put(
                             url='/progress',
                             name=username,
                             data=existing_data
@@ -216,7 +255,7 @@ class RTDBHelper:
                 return False
             else:
                 # Delete all progress
-                deleted = self.__db.delete(
+                deleted = db.delete(
                     url='/progress',
                     name=username
                 )
@@ -229,6 +268,12 @@ class RTDBHelper:
         except Exception as e:
             logger.exception(f"Exception in delete_progress for user {username}: {e}")
             raise
+
+    def __del__(self):
+        """Cleanup connections when the helper is destroyed."""
+        self.__pool.shutdown(wait=True)
+        self.__connections.clear()
+        logger.info("RTDBHelper connections cleaned up.")
 
 
 rtdb = RTDBHelper()
