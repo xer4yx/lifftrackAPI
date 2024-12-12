@@ -55,7 +55,7 @@ class Object(BaseModel):
 
 
 class Features(BaseModel):
-    objects: Object
+    objects: Optional[Dict[str, Object]] = Field(default_factory=dict)  # Make objects optional
     joint_angles: Dict[str, Any]
     movement_pattern: str
     speeds: dict
