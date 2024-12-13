@@ -1,5 +1,5 @@
 
-![Logo](https://github.com/xer4yx/lifftrackAPI/blob/integerations/logo.jpg)
+![Logo](logo.jpg)
 
 # LiftTrack API
 
