@@ -1,5 +1,5 @@
 
-![Logo](https://github.com/xer4yx/lifftrackAPI/blob/master/logo.jpg)
+![Logo](https://github.com/xer4yx/lifftrackAPI/blob/integerations/logo.jpg)
 
 # LiftTrack API
 
@@ -58,7 +58,7 @@ Perfect for fitness applications, personal trainers, and individuals serious abo
 - Error handling and validation
 
 ## Sections
-- [API References](https://github.com/xer4yx/lifftrackAPI/blob/master/APIREFS.md)
+- [API References](https://github.com/xer4yx/lifftrackAPI/blob/integrations/APIREFS.md)
 ## Environment Variables
 
 To run this project, you will need to add the following environment variables to your `.env` file
