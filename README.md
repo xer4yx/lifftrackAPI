@@ -1,5 +1,5 @@
 
-![Logo](https://github.com/xer4yx/lifftrackAPI/blob/master/logo.jpg)
+![Logo](https://github.com/xer4yx/lifftrackAPI/blob/logo.jpg)
 
 # LiftTrack API
 
