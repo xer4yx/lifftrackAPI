@@ -14,13 +14,13 @@ comvis_logger = setup_logger("roboflow-v2", "comvis.log")
 class ObjectTracker:
     def __init__(self) -> None:
         # Initialize the Roboflow Inference Client
-        check_docker_container_status(container_logger, config.get(section="Docker", option="container_name"))
+        # check_docker_container_status(container_logger, config.get(section="Docker", option="CONTAINER_NAME"))
         self.__client = InferenceHTTPClient(
             api_url="http://localhost:9001",  # URL for the Roboflow Inference Client
             api_key="TiK2P0kPcpeVnssORWRV",  # Your API Key
         )
-        self.__project_id = config.get(section="Roboflow", option="project_id")
-        self.__model_version = int(config.get(section="Roboflow", option="model_ver"))
+        self.__project_id = config.get(section="Roboflow", option="ROBOFLOW_PROJECT_ID")
+        self.__model_version = int(config.get(section="Roboflow", option="ROBOFLOW_MODEL_VER"))
         
     # Function to draw bounding boxes on the frame with scaling
     def draw_bounding_boxes(self, frame, predictions, original_size):

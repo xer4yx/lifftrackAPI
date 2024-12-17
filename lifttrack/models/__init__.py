@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class User(BaseModel):
-    id: str = datetime.strftime(datetime.now(), '%Y%H%d%m')
+    id: Optional[str] = datetime.strftime(datetime.now(), '%Y%H%d%m')
     fname: str
     lname: str
     username: str
@@ -14,8 +14,8 @@ class User(BaseModel):
     email: str
     password: str
     pfp: Optional[str] = None
-    isAuthenticated: bool = False
-    isDeleted: bool = False
+    isAuthenticated: Optional[bool] = False
+    isDeleted: Optional[bool] = False
 
 
 class LoginForm(BaseModel):
