@@ -14,8 +14,8 @@ logger = setup_logger("rtdbHelper", "lifttrack_db.log")
 
 class RTDBHelper:
     def __init__(self, dsn=None, authentication=None, max_workers=5):
-        self.__dsn = config.get(section='Firebase', option='dsn') or dsn
-        self.__auth = config.get(section='Firebase', option='authentication') or authentication
+        self.__dsn = config.get(section='Firebase', option='RTDB_DSN') or dsn
+        self.__auth = config.get(section='Firebase', option='RTDB_AUTH') or authentication
         self.__pool = ThreadPoolExecutor(max_workers=max_workers)
         self.__connections = {}
         logger.info(f"RTDBHelper initialized with {max_workers} workers.")

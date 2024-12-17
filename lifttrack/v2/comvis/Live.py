@@ -21,7 +21,7 @@ logger = setup_logger("analyzer-v2", "comvis.log")
 class ThreeDimInference:
     def __init__(self):
         try:
-            self.__model = tf.keras.models.load_model(config.get('CNN', 'build-0.1.1'), compile=False)  # Don't load optimizer
+            self.__model = tf.keras.models.load_model(config.get('CNN', 'test-0.1.0'), compile=False)  # Don't load optimizer
             logger.info("Analyzer model loaded successfully")
         except Exception as e:
             logger.error(f"Error loading model: {e}")

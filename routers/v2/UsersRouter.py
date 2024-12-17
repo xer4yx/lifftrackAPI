@@ -30,29 +30,32 @@ async def create_user(user: User, db: FirebaseDBHelper = Depends(get_db)):
     """
     try:
         user_data = user.model_dump()
-        existing_users = db.query_collection(
+        
+        # Check for existing username using RTDB query
+        existing_data = db.query_data(
             'users',
-            filters=[('username','==',user.username)]
+            order_by='username',
+            start_at=user.username,
+            end_at=user.username
         )
         
-        if existing_users:
+        if existing_data:
             raise HTTPException(status_code=400, detail="Username already exists")
         
-        # Add user to Firebase
-        user_id = db.add_document('users', user_data)
+        # Add user to Firebase RTDB
+        user_id = db.add_document(path='users', data=user_data, key=user_data['username'])
+        user_data['id'] = user_id
         
-        return JSONResponse(
-            content=User
-        )
+        return JSONResponse(content=user_data)
     except Exception as e:
-        pass
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
 
 
 @router.get("/users", response_model=List[User])
 async def list_users(
     db: FirebaseDBHelper = Depends(get_db),
-    is_authenticated: Optional[int] = None,
-    is_deleted: Optional[int] = None
+    is_authenticated: Optional[bool] = False,
+    is_deleted: Optional[bool] = False
 ):
     """
     Retrieve users with optional age filtering.
@@ -66,24 +69,43 @@ async def list_users(
         List[User]: List of user details
     """
     try:
-        filters = []
-        if is_authenticated is not None:
-            filters.append(('isAuthenticated', '==', is_authenticated))
-        if is_deleted is not None:
-            filters.append(('isDeleted', '==', is_deleted))
-        
-        users_data = db.query_collection(
-            'users', 
-            filters=filters if filters else None,
+        # Get all users first
+        users_data = db.query_data(
+            'users',
             order_by='username'
         )
+        
+        if not users_data:
+            return []
+        
+        # Convert to list if it's a dictionary
+        if isinstance(users_data, dict):
+            users_list = [
+                {'id': key, **value} 
+                for key, value in users_data.items()
+            ]
+        else:
+            users_list = users_data
+            
+        # Apply filters manually
+        filtered_users = [
+            user for user in users_list
+            if user.get('isAuthenticated', False) == is_authenticated
+            and user.get('isDeleted', False) == is_deleted
+        ]
         
         return [
             User(
                 user_id=user.get('id', ''),
-                username=user['username'],
-                email=user['email'],
-            ).model_dump_json() for user in users_data
+                username=user.get('username', ''),
+                email=user.get('email', ''),
+                fname=user.get('fname', ''),  # Added required field
+                lname=user.get('lname', ''),  # Added required field
+                phoneNum=user.get('phoneNum', ''),  # Added required field
+                password=user.get('password', ''),  # Added required field
+                is_authenticated=user.get('isAuthenticated', False),
+                is_deleted=user.get('isDeleted', False)
+            ) for user in filtered_users
         ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve users: {str(e)}")
@@ -107,17 +129,24 @@ async def update_user(
         dict: Update confirmation
     """
     try:
+        # Check if user exists
+        existing_user = db.get_document('users', user_id)
+        if not existing_user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
         # Convert Pydantic model to dict, removing None values
         update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
         
         # Perform update
-        update_result = db.update_document('users', user_id, update_dict)
+        success = db.update_document('users', user_id, update_dict)
         
-        if not update_result:
-            raise HTTPException(status_code=404, detail="User not found")
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update user")
         
         return JSONResponse({"message": "User updated successfully"})
     
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"User update failed: {str(e)}")
 
@@ -135,12 +164,20 @@ async def delete_user(user_id: str, db: FirebaseDBHelper = Depends(get_db)):
         dict: Deletion confirmation
     """
     try:
-        delete_result = db.delete_document('users', user_id)
-        
-        if not delete_result:
+        # Check if user exists
+        existing_user = db.get_document('users', user_id)
+        if not existing_user:
             raise HTTPException(status_code=404, detail="User not found")
+            
+        # Perform deletion
+        success = db.delete_document('users', user_id)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete user")
         
         return {"message": "User deleted successfully"}
     
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"User deletion failed: {str(e)}")

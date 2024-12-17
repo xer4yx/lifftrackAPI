@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 from typing import Optional, Union
 import warnings
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 import threading
 import asyncio
@@ -24,7 +24,5 @@ config_path = os.path.join(os.path.dirname(__file__), '..', 'config.ini')
 
 config = configparser.ConfigParser()
 config.read(config_path)
-
-load_dotenv('./.env')
 
 network_logger = setup_logger("network", "network.log")

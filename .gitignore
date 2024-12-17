@@ -22,3 +22,5 @@ Dockerfile
 requirements.txt
 
 !logo.jpg
+
+*.http

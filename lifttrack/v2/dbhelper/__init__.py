@@ -1,16 +1,17 @@
 from os import getenv
 from dotenv import load_dotenv
 
+from lifttrack import config
 from .admin_rtdb import FirebaseDBHelper
+
 from fastapi import HTTPException
 
 __all__ = ['FirebaseDBHelper']
-
 load_dotenv('./.env')
 options = {
-    'databaseURL': getenv('FIREBASE_DATABASE_URL'),
+    'databaseURL': config.get(section='Firebase', option='RTDB_DSN'),
     'databaseAuthVariableOverride': {
-        'uid': getenv('FIREBASE_AUTH_UID')
+        'uid': config.get(section='Firebase', option='FIREBASE_AUTH_UID')
     }
 }
 

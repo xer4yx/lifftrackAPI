@@ -1,5 +1,5 @@
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, db
 
 from typing import Any, Dict, Optional, List, Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -8,7 +8,7 @@ import threading
 
 class FirebaseDBHelper:
     """
-    A comprehensive database helper class for Firebase Firestore 
+    A comprehensive database helper class for Firebase Realtime Database 
     with connection pooling and advanced error handling.
     
     This class provides:
@@ -21,7 +21,7 @@ class FirebaseDBHelper:
     _lock = threading.Lock()
     
     def __new__(
-        cls, 
+        cls,
         credentials_path: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None
     ):
@@ -35,199 +35,147 @@ class FirebaseDBHelper:
         if not cls._instance:
             with cls._lock:
                 if not cls._instance:
-                    # Initialize the Firebase app if credentials are provided
-                    if credentials_path:
-                        cred = credentials.Certificate(credentials_path)
-                        firebase_admin.initialize_app(
-                            credential=cred,
-                            options=options
+                    try:
+                        if credentials_path:
+                            cred = credentials.Certificate(credentials_path)
+                            if not firebase_admin._apps:
+                                if not options or 'databaseURL' not in options:
+                                    raise ValueError("databaseURL must be provided in options")
+                                firebase_admin.initialize_app(
+                                    credential=cred, 
+                                    options=options
+                                )
+                        
+                        cls._instance = super().__new__(cls)
+                        cls._instance._executor = ThreadPoolExecutor(
+                            max_workers=10,
+                            thread_name_prefix='rtdb-pool'
                         )
-                    
-                    # Create the singleton instance
-                    cls._instance = super().__new__(cls)
-                    
-                    # Setup thread pool for connection pooling
-                    cls._instance._executor = ThreadPoolExecutor(
-                        max_workers=10,  # Configurable number of worker threads
-                        thread_name_prefix='firestore-pool'
-                    )
-                    
-                    # Get Firestore client
-                    cls._instance._db = firestore.client()
+                        cls._instance._db = db.reference()
+                    except Exception as e:
+                        print(f"Firebase initialization error: {e}")
+                        raise
         
         return cls._instance
     
-    def get_collection(self, collection_name: str):
+    def get_reference(self, path: str):
         """
-        Retrieve a specific Firestore collection.
+        Get a reference to a specific path in the Realtime Database.
         
         Args:
-            collection_name (str): Name of the Firestore collection
+            path (str): Path to the database location
         
         Returns:
-            firestore.CollectionReference: Reference to the specified collection
+            db.Reference: Reference to the specified location
         """
-        return self._db.collection(collection_name)
+        return self._db.child(path)
     
-    def add_document(self, collection_name: str, data: Dict[str, Any], 
-                     doc_id: Optional[str] = None) -> str:
+    def add_document(self, path: str, data: Dict[str, Any], key: Optional[str] = None) -> str:
         """
-        Add a document to a specified collection.
+        Add data to a specified path.
         
         Args:
-            collection_name (str): Target collection name
-            data (Dict): Document data to be added
-            doc_id (Optional[str]): Custom document ID. If None, auto-generated.
+            path (str): Database path
+            data (Dict): Data to be added
+            key (Optional[str]): Custom key. If None, auto-generated.
         
         Returns:
-            str: ID of the added document
+            str: Key of the added data
         """
         try:
-            collection_ref = self.get_collection(collection_name)
-            
-            if doc_id:
-                # Add document with specific ID
-                doc_ref = collection_ref.document(doc_id)
-                doc_ref.set(data)
-                return doc_id
+            ref = self.get_reference(path)
+            if key:
+                ref.child(key).set(data)
+                return key
             else:
-                # Add document with auto-generated ID
-                doc_ref = collection_ref.add(data)
-                return doc_ref[1].id
+                return ref.push(data).key
         except Exception as e:
-            print(f"Error adding document: {e}")
+            print(f"Error adding data: {e}")
             raise
     
-    def get_document(self, collection_name: str, doc_id: str) -> Optional[Dict[str, Any]]:
+    def get_document(self, path: str, key: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve a specific document by ID.
+        Retrieve data at a specific path and key.
         
         Args:
-            collection_name (str): Source collection name
-            doc_id (str): Document ID to retrieve
+            path (str): Database path
+            key (str): Data key to retrieve
         
         Returns:
-            Optional[Dict]: Document data or None if not found
+            Optional[Dict]: Data or None if not found
         """
         try:
-            doc_ref = self.get_collection(collection_name).document(doc_id)
-            doc = doc_ref.get()
-            
-            return doc.to_dict() if doc.exists else None
+            return self.get_reference(path).child(key).get()
         except Exception as e:
-            print(f"Error retrieving document: {e}")
+            print(f"Error retrieving data: {e}")
             raise
     
-    def update_document(self, collection_name: str, doc_id: str, 
-                        update_data: Dict[str, Any]) -> bool:
+    def update_document(self, path: str, key: str, update_data: Dict[str, Any]) -> bool:
         """
-        Update an existing document.
+        Update existing data.
         
         Args:
-            collection_name (str): Target collection name
-            doc_id (str): Document ID to update
+            path (str): Database path
+            key (str): Key to update
             update_data (Dict): Fields to update
-        
-        Returns:
-            bool: True if update successful, False otherwise
         """
         try:
-            doc_ref = self.get_collection(collection_name).document(doc_id)
-            doc_ref.update(update_data)
+            self.get_reference(path).child(key).update(update_data)
             return True
         except Exception as e:
-            print(f"Error updating document: {e}")
+            print(f"Error updating data: {e}")
             return False
     
-    def delete_document(self, collection_name: str, doc_id: str) -> bool:
+    def delete_document(self, path: str, key: str) -> bool:
         """
-        Delete a specific document.
+        Delete data at a specific path and key.
         
         Args:
-            collection_name (str): Source collection name
-            doc_id (str): Document ID to delete
-        
-        Returns:
-            bool: True if deletion successful, False otherwise
+            path (str): Database path
+            key (str): Key to delete
         """
         try:
-            doc_ref = self.get_collection(collection_name).document(doc_id)
-            doc_ref.delete()
+            self.get_reference(path).child(key).delete()
             return True
         except Exception as e:
-            print(f"Error deleting document: {e}")
+            print(f"Error deleting data: {e}")
             return False
     
-    def batch_write(self, operations: List[Callable]) -> bool:
+    def query_data(self, path: str, 
+                   order_by: Optional[str] = None,
+                   limit: Optional[int] = None,
+                   start_at: Optional[Any] = None,
+                   end_at: Optional[Any] = None) -> List[Dict[str, Any]]:
         """
-        Perform batch write operations with connection pooling.
+        Query data with ordering and filtering.
         
         Args:
-            operations (List[Callable]): List of database operations to execute
-        
-        Returns:
-            bool: True if all operations successful, False otherwise
-        """
-        try:
-            batch = self._db.batch()
-            
-            # Submit all operations to thread pool
-            futures = [
-                self._executor.submit(op, batch) 
-                for op in operations
-            ]
-            
-            # Wait for all futures to complete
-            for future in futures:
-                future.result()
-            
-            # Commit the batch
-            batch.commit()
-            return True
-        except Exception as e:
-            print(f"Batch write error: {e}")
-            return False
-    
-    def query_collection(self, collection_name: str, 
-                         filters: Optional[List[tuple]] = None, 
-                         order_by: Optional[str] = None, 
-                         limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """
-        Perform advanced querying on a collection.
-        
-        Args:
-            collection_name (str): Collection to query
-            filters (Optional[List[tuple]]): List of filter tuples (field, op, value)
-            order_by (Optional[str]): Field to order results by
+            path (str): Database path to query
+            order_by (Optional[str]): Child key to order by
             limit (Optional[int]): Maximum number of results
+            start_at (Optional[Any]): Value to start at
+            end_at (Optional[Any]): Value to end at
         
         Returns:
-            List[Dict]: List of matching documents
+            List[Dict]: List of matching data
         """
         try:
-            query = self.get_collection(collection_name)
+            ref = self.get_reference(path)
             
-            # Apply filters
-            if filters:
-                for field, op, value in filters:
-                    query = query.where(field, op, value)
-            
-            # Apply ordering
             if order_by:
-                query = query.order_by(order_by)
-            
-            # Apply limit
+                ref = ref.order_by_child(order_by)
+            if start_at is not None:
+                ref = ref.start_at(start_at)
+            if end_at is not None:
+                ref = ref.end_at(end_at)
             if limit:
-                query = query.limit(limit)
+                ref = ref.limit_to_first(limit)
             
-            # Execute query and return results
-            docs = query.stream()
-            return [doc.to_dict() for doc in docs]
-        
+            return ref.get()
         except Exception as e:
             print(f"Query error: {e}")
             return []
-
+    
     def close(self):
         """
         Cleanup method to shutdown thread pool and Firebase app.
