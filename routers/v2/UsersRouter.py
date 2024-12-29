@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from lifttrack.models import User
+from lifttrack.auth import get_password_hash
 from lifttrack.v2.dbhelper import get_db, FirebaseDBHelper
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -30,6 +31,7 @@ async def create_user(user: User, db: FirebaseDBHelper = Depends(get_db)):
     """
     try:
         user_data = user.model_dump()
+        user_data['password'] = get_password_hash(user_data['password'])
         
         # Check for existing username using RTDB query
         existing_data = db.query_data(
@@ -43,7 +45,7 @@ async def create_user(user: User, db: FirebaseDBHelper = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Username already exists")
         
         # Add user to Firebase RTDB
-        user_id = db.add_document(path='users', data=user_data, key=user_data['username'])
+        user_id = db.set_data(path='users', data=user_data, key=user_data['username'])
         user_data['id'] = user_id
         
         return JSONResponse(content=user_data)
@@ -130,7 +132,7 @@ async def update_user(
     """
     try:
         # Check if user exists
-        existing_user = db.get_document('users', user_id)
+        existing_user = db.get_data('users', user_id)
         if not existing_user:
             raise HTTPException(status_code=404, detail="User not found")
             
@@ -138,7 +140,7 @@ async def update_user(
         update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
         
         # Perform update
-        success = db.update_document('users', user_id, update_dict)
+        success = db.update_data('users', user_id, update_dict)
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to update user")
@@ -165,12 +167,12 @@ async def delete_user(user_id: str, db: FirebaseDBHelper = Depends(get_db)):
     """
     try:
         # Check if user exists
-        existing_user = db.get_document('users', user_id)
+        existing_user = db.get_data('users', user_id)
         if not existing_user:
             raise HTTPException(status_code=404, detail="User not found")
             
         # Perform deletion
-        success = db.delete_document('users', user_id)
+        success = db.delete_data('users', user_id)
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to delete user")

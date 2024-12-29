@@ -50,12 +50,13 @@ class Object(BaseModel):
     width: float
     height: float
     confidence: float
-    class_name: str = Field(alias="class")
+    type: str = Field(alias="class")
     classs_id: Optional[int] = None
 
 
 class Features(BaseModel):
-    objects: Optional[Dict[str, Object]] = Field(default_factory=dict)  # Make objects optional
+    # objects: Optional[Dict[str, Object]] = Field(default_factory=dict)  # Make objects optional
+    objects: Optional[Object]
     joint_angles: Dict[str, Any]
     movement_pattern: str
     speeds: dict

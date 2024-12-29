@@ -70,7 +70,7 @@ class FirebaseDBHelper:
         """
         return self._db.child(path)
     
-    def add_document(self, path: str, data: Dict[str, Any], key: Optional[str] = None) -> str:
+    def set_data(self, path: str, data: Dict[str, Any], key: Optional[str] = None) -> str:
         """
         Add data to a specified path.
         
@@ -92,8 +92,31 @@ class FirebaseDBHelper:
         except Exception as e:
             print(f"Error adding data: {e}")
             raise
+        
+    def push_data(self, path: str, data: Dict[str, Any], key: Optional[str] = None) -> str:
+        """
+        Add data to a specified path using a push.
+        
+        Args:
+            path (str): Database path
+            data (Dict): Data to be added
+            key (Optional[str]): Custom key. If None, auto-generated.
+        
+        Returns:
+            str: Key of the added data
+        """
+        try:
+            ref = self.get_reference(path)
+            if key:
+                ref.child(key).push(data)
+                return key
+            else:
+                return ref.push(data).key
+        except Exception as e:
+            print(f"Error adding data: {e}")
+            raise
     
-    def get_document(self, path: str, key: str) -> Optional[Dict[str, Any]]:
+    def get_data(self, path: str, key: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve data at a specific path and key.
         
@@ -110,7 +133,7 @@ class FirebaseDBHelper:
             print(f"Error retrieving data: {e}")
             raise
     
-    def update_document(self, path: str, key: str, update_data: Dict[str, Any]) -> bool:
+    def update_data(self, path: str, key: str, update_data: Dict[str, Any]) -> bool:
         """
         Update existing data.
         
@@ -126,7 +149,7 @@ class FirebaseDBHelper:
             print(f"Error updating data: {e}")
             return False
     
-    def delete_document(self, path: str, key: str) -> bool:
+    def delete_data(self, path: str, key: str) -> bool:
         """
         Delete data at a specific path and key.
         
