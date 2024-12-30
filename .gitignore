@@ -17,6 +17,10 @@ logs/
 *.jpg
 *.png
 *.json
-Dockerfile
 
+Dockerfile
 requirements.txt
+
+!logo.jpg
+
+*.http

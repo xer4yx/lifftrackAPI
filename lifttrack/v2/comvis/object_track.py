@@ -14,13 +14,13 @@ comvis_logger = setup_logger("roboflow-v2", "comvis.log")
 class ObjectTracker:
     def __init__(self) -> None:
         # Initialize the Roboflow Inference Client
-        check_docker_container_status(container_logger, config.get(section="Docker", option="container_name"))
+        # check_docker_container_status(container_logger, config.get(section="Docker", option="CONTAINER_NAME"))
         self.__client = InferenceHTTPClient(
             api_url="http://localhost:9001",  # URL for the Roboflow Inference Client
             api_key="TiK2P0kPcpeVnssORWRV",  # Your API Key
         )
-        self.__project_id = config.get(section="Roboflow", option="project_id")
-        self.__model_version = int(config.get(section="Roboflow", option="model_ver"))
+        self.__project_id = config.get(section="Roboflow", option="ROBOFLOW_PROJECT_ID")
+        self.__model_version = int(config.get(section="Roboflow", option="ROBOFLOW_MODEL_VER"))
         
     # Function to draw bounding boxes on the frame with scaling
     def draw_bounding_boxes(self, frame, predictions, original_size):
@@ -57,12 +57,13 @@ class ObjectTracker:
             roboflow_results = self.__client.infer(frame, model_id=f"{self.__project_id}/{self.__model_version}")
             comvis_logger.info(f"Received Roboflow Inference: {roboflow_results}")
             
-            if not roboflow_results:
-                return {}  # Return empty dict instead of None
+            if not roboflow_results or not isinstance(roboflow_results, dict):
+                return []  # Return empty dict for invalid results
             
             predictions = [Object(**pred).model_dump() for pred in roboflow_results]
             return predictions
+            return roboflow_results
             
         except Exception as e:
             comvis_logger.error(f"Error during object detection: {e}")
-            return {}  # Return empty dict on error
+            return []  # Return empty dict on error

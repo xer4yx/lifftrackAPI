@@ -2,7 +2,7 @@ import asyncio
 import base64
 import cv2
 import numpy as np
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
 
 from lifttrack.utils.logging_config import setup_logger
 from lifttrack.comvis import websocket_process_frames
@@ -19,8 +19,10 @@ from lifttrack.v2.comvis.features import (
     calculate_stability
 )
 from lifttrack.v2.comvis.progress import calculate_form_accuracy
+from lifttrack.v2.dbhelper import get_db
+from lifttrack.v2.dbhelper.admin_rtdb import FirebaseDBHelper
 
-from lifttrack.models import Exercise, ExerciseData, Features
+from lifttrack.models import Exercise, ExerciseData, Features, Object
 from lifttrack.dbhandler.rest_rtdb import rtdb
 
 router = APIRouter()
@@ -88,7 +90,8 @@ async def websocket_inference(websocket: WebSocket):
 async def websocket_endpoint(
     websocket: WebSocket,
     username: str = Query(..., description="Username of the person exercising"),
-    exercise_name: str = Query(..., description="Name of the exercise being performed")
+    exercise_name: str = Query(..., description="Name of the exercise being performed"),
+    db: FirebaseDBHelper = Depends(get_db)
     ):
     await websocket.accept()
     
@@ -109,6 +112,12 @@ async def websocket_endpoint(
     max_frames = 1800
     last_frame_time = asyncio.get_event_loop().time()
     frame_timeout = 60.0
+    
+    previous_frame = 29
+    frame_buffer_size = 30  # Only keep last 30 frames for analysis
+    frames_buffer = []
+    last_analysis_time = asyncio.get_event_loop().time()
+    analysis_interval = 1.0  # Perform analysis every 1 second instead of every 30 frames
     
     try:
         while frame_count < max_frames:
@@ -139,69 +148,75 @@ async def websocket_endpoint(
 
                 logger.info(f"Received frame data of length: {len(data)} bytes")
 
-                # Process the received frame data
+                # Process the received frame data more efficiently
                 np_arr = np.frombuffer(data, np.uint8)
                 frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-
-                # Check if the frame is empty
                 if frame is None or frame.size == 0:
-                    logger.error("Received an empty frame, skipping encoding.")
-                    continue  # Skip the rest of the loop if the frame is empty
+                    continue
+
+                # Resize frame before processing to reduce memory usage
+                frame = cv2.resize(frame, (192, 192))  # Adjust resolution as needed
                 
-                # Immediately send back the original frame bytes
-                _, buffer = cv2.imencode('.jpg', frame)
-                frame_bytes = base64.b64encode(buffer).decode('utf-8')
-                await websocket.send_json({
-                    'frame': frame_bytes,
-                    'type': 'frame'
-                })
+                # Use more efficient encoding parameters
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 
-                # Add frame to buffer for analysis
+                # Add frame to buffer with size limit
                 frames_buffer.append(frame)
+                if len(frames_buffer) > frame_buffer_size:
+                    frames_buffer.pop(0)  # Remove oldest frame
                 frame_count += 1
+                
+                if len(frames_buffer) == previous_frame:
+                    _, prev_keypoints = movenet_inference.analyze_frame(frames_buffer[-1])
 
-                # Process analysis every 30th frame
-                if frame_count % 30 == 0:
+                # Process analysis based on time interval instead of frame count
+                if current_time - last_analysis_time >= analysis_interval and len(frames_buffer) >= frame_buffer_size:
                     try:
-                        logger.info(f"Frame count: {frame_count}")
-                        # 1. Get MoveNet and Roboflow inference
-                        _, keypoints = movenet_inference.analyze_frame(frame)
-                        roboflow_results = object_tracker.process_frames_and_get_annotations(frame)
+                        # Process latest frame only for MoveNet
+                        _, curr_keypoints = movenet_inference.analyze_frame(frames_buffer[-1])
                         
-                        # if not roboflow_results:
-                        #     predictions = []
-                        # else:
-                        #     predictions = roboflow_results.get('predictions', [])
+                        # Process latest frame for object detection
+                        object_inference = object_tracker.process_frames_and_get_annotations(frames_buffer[-1])
                         
-                        predictions = {}
-                        if roboflow_results:
-                            predictions = {prediction for prediction in roboflow_results}
+                        # Use only recent frames for movement classification
+                        predicted_class_name = three_dim_inference.predict_class(frames_buffer)
+                        
+                        object_predictions = object_inference.get('predictions', [])
+                        
+                        if not object_predictions:
+                            logger.warning(f"Object detection failed. Only contains: {object_predictions}")
+                            object_predictions = {}
+                        else:
+                            # Sort predictions by confidence and get the highest confidence prediction
+                            object_predictions = max(object_predictions, key=lambda x: x.get('confidence', 0))
+                            logger.info(f"Selected prediction with confidence: {object_predictions.get('confidence')}")
 
-                        # 2. Get predicted class
-                        predicted_class_name = three_dim_inference.predict_class(frames_buffer[-30:])
-
-                        # 3. Extract features
+                        # Create features dict more efficiently
                         features = {
-                            'joint_angles': extract_joint_angles(keypoints),
-                            'speeds': calculate_speed(extract_movement_patterns(keypoints, keypoints)),
-                            'body_alignment': extract_body_alignment(keypoints),
-                            'stability': calculate_stability(keypoints, keypoints),
-                            'object_detections': predictions
+                            'joint_angles': extract_joint_angles(curr_keypoints),
+                            'speeds': calculate_speed(extract_movement_patterns(curr_keypoints, prev_keypoints)),
+                            'body_alignment': extract_body_alignment(curr_keypoints),
+                            'stability': calculate_stability(curr_keypoints, prev_keypoints),
+                            'object_detections': object_predictions if isinstance(object_predictions, dict) else {}
                         }
 
                         # 4. Calculate accuracy and get suggestions
-                        accuracy, suggestions = calculate_form_accuracy(features, predicted_class_name)
-
-                        # Get predictions, handling the case where object detection fails
-                        try:
-                            predictions = roboflow_results.get('predictions', []) if roboflow_results else {}
-                        except Exception as e:
-                            logger.warning(f"Object detection failed: {str(e)}")
-                            predictions = {}
+                        _, suggestions = calculate_form_accuracy(features, predicted_class_name)
+                        
+                        # Create Object model with proper field mapping
+                        object_base_model = Object(
+                            x=object_predictions.get('x', 0),
+                            y=object_predictions.get('y', 0),
+                            width=object_predictions.get('width', 0),
+                            height=object_predictions.get('height', 0),
+                            confidence=object_predictions.get('confidence', 0),
+                            classs_id=object_predictions.get('class_id', 0),
+                            **{'class': object_predictions.get('class', '')}  # Use unpacking for the 'class' field
+                        )
 
                         # Create Features object with empty objects if detection failed
-                        features_obj = Features(
-                            objects={} if not predictions else predictions,  # Empty dict if no predictions
+                        features_base_model = Features(
+                            objects=object_base_model,
                             joint_angles=features['joint_angles'],
                             movement_pattern=predicted_class_name,
                             speeds=features['speeds'],
@@ -210,20 +225,36 @@ async def websocket_endpoint(
                         )
 
                         # Create ExerciseData object
-                        exercise_data = ExerciseData(
+                        exercise_data_base_model = ExerciseData(
                             suggestion=suggestions[0] if suggestions else "No suggestions",
-                            features=features_obj,
+                            features=features_base_model,
                             frame=f"frame_{frame_count}"
                         )
                         
                         # Create Exercise object and set the specific exercise data
-                        exercise = Exercise()
-                        exercise.set_exercise_data(exercise_name, exercise_data)
+                        # exercise = Exercise()
+                        # exercise.set_exercise_data(exercise_name, exercise_data)
 
                         # Store in database
-                        rtdb.put_progress(
-                            username=username,
-                            exercise=exercise
+                        # rtdb.put_progress(
+                        #     username=username,
+                        #     exercise=exercise
+                        # )
+                        
+                        # Format the date and time to be Firebase-safe
+                        exercise_datetime = exercise_data_base_model.date.split('.')[0]  # Remove microseconds
+                        safe_datetime = exercise_datetime.replace(':', '-')
+                        exercise_data_dict = exercise_data_base_model.model_dump()
+                        
+                        # Calculate seconds from frame count (at 30fps)
+                        seconds = frame_count // 30
+                        
+                        # Store under: progress/username/exercise_name/datetime/second_X
+                        time_key = f"second_{seconds}"
+                        user_id = db.set_data(
+                            path=f'progress/{username}/{exercise_name.lower()}/{safe_datetime}', 
+                            data=exercise_data_dict,
+                            key=time_key
                         )
 
                         # Send analysis results
@@ -231,12 +262,18 @@ async def websocket_endpoint(
                             'suggestions': suggestions,
                         })
 
-                        frames_buffer.clear()  # Clear buffer after successful analysis
-                        logger.info(f"Cleared buffer and stored progress data")
+                        last_analysis_time = current_time
+                        frames_buffer.clear()  # Clear buffer after analysis
+                        
                     except Exception as e:
                         logger.error(f"Error during analysis: {str(e)}")
-                        frames_buffer.clear()  # Clear buffer on analysis error
                         continue
+
+                # Send frame response immediately without waiting for analysis
+                await websocket.send_json({
+                    'frame': base64.b64encode(buffer).decode('utf-8'),
+                    'type': 'frame'
+                })
 
             except WebSocketDisconnect:
                 logger.info(f"Client disconnected after processing {frame_count} frames")

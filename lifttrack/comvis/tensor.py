@@ -100,8 +100,8 @@ def check_docker_container_status(logger,container_name: str = None):
 class MoveNetInference:
     def __init__(self):
         self.__start_time = time.time()
-        model = hub.load(config.get(section="TensorHub", option="model"))
-        self.movenet = model.signatures[config.get(section="TensorHub", option="signature")]
+        model = hub.load(config.get(section="TensorHub", option="MOVENET_MODEL"))
+        self.movenet = model.signatures[config.get(section="TensorHub", option="MOVENET_SERVING_DEFAULT")]
         self.__end_time = time.time()
         print(f"{self.__class__.__name__} model loaded in {self.__end_time - self.__start_time:.2f} seconds")
 
@@ -111,7 +111,7 @@ class MoveNetInference:
         """
         for _ in range(inference_count-1):
             inference = self.movenet(input)
-        keypoints = inference[config.get(section="TensorHub", option="inference")]
+        keypoints = inference[config.get(section="TensorHub", option="MOVENET_OUTPUT_BLOCK")]
         # Reshape keypoints to [17, 3] format
         return keypoints  # Returns shape [17, 3]
 
@@ -119,13 +119,13 @@ class MoveNetInference:
 class RoboflowInference:
     def __init__(self):
         # check_docker_container_status(config.get(section="Docker", option="container_name"))
-        self.project_id = config.get(section="Roboflow", option="project_id")
-        self.model_version = int(config.get(section="Roboflow", option="model_ver"))
+        self.project_id = config.get(section="Roboflow", option="ROBOFLOW_PROJECT_ID")
+        self.model_version = int(config.get(section="Roboflow", option="ROBOFLOW_MODEL_VER"))
         self.__start_time = time.time()
-        host_ip = config.get(section="Server", option="host")
+        host_ip = config.get(section="Server", option="LOCAL_SERVER_HOST")
         self.roboflow_client = InferenceHTTPClient(
             api_url=f"http://{host_ip}:9001",
-            api_key=config.get(section="Roboflow", option="api_key")
+            api_key=config.get(section="Roboflow", option="ROBOFLOW_API_KEY")
         )
         self.__end_time = time.time()
         print(f"{self.__class__.__name__} connected to server.")

@@ -20,8 +20,8 @@ KEYPOINT_DICT = {
 
 class MovenetInference:
     def __init__(self):
-        self.__movenet_model = hub.load(config.get('TensorHub', 'model'))
-        self.__movenet = self.__movenet_model.signatures['serving_default']
+        self.__movenet_model = hub.load(config.get('TensorHub', 'MOVENET_MODEL'))
+        self.__movenet = self.__movenet_model.signatures["serving_default"]
         # List to store annotations (keypoints) for later use
         self.__annotations_list = []
         
@@ -56,7 +56,7 @@ class MovenetInference:
         
         # MoveNet inference
         results = self.__movenet(input_img)
-        keypoints = results['output_0'].numpy()[0, 0, :, :3]
+        keypoints = results["output_0"].numpy()[0, 0, :, :3]
         print(f"Received Movenet Keypoints: {keypoints}")  # Extract keypoints
 
         # Process keypoints for annotations
