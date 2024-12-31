@@ -57,12 +57,13 @@ class ObjectTracker:
             roboflow_results = self.__client.infer(frame, model_id=f"{self.__project_id}/{self.__model_version}")
             comvis_logger.info(f"Received Roboflow Inference: {roboflow_results}")
             
-            if not roboflow_results:
-                return {}  # Return empty dict instead of None
+            if not roboflow_results or not isinstance(roboflow_results, dict):
+                return []  # Return empty dict for invalid results
             
             predictions = [Object(**pred).model_dump() for pred in roboflow_results]
             return predictions
+            return roboflow_results
             
         except Exception as e:
             comvis_logger.error(f"Error during object detection: {e}")
-            return {}  # Return empty dict on error
+            return []  # Return empty dict on error

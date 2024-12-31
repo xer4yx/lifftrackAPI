@@ -24,7 +24,14 @@ class ThreeDimInference:
             self.__model = tf.keras.models.load_model(config.get('CNN', 'test-0.1.0'), compile=False)  # Don't load optimizer
             logger.info("Analyzer model loaded successfully")
         except Exception as e:
-            logger.error(f"Error loading model: {e}")
+            logger.error(f"Error loading primary model: {e}")
+            try:
+                fallback_path = config.get('CNN', 'lifttrack_cnn_lite')
+                self.__model = tf.keras.models.load_model(fallback_path, compile=False)
+                logger.info(f"Analyzer model loaded successfully from fallback path: {fallback_path}")
+            except Exception as e:
+                logger.error(f"Error loading fallback model: {e}")
+                raise RuntimeError("Failed to load both primary and fallback models")
             
     def prepare_frames_for_input(self, frame_list, num_frames=30):
         """
