@@ -1,24 +1,78 @@
-from typing import List, Optional
+from typing import List
+from pydantic import ValidationError
 
-from lifttrack.models import User
-from lifttrack.auth import get_password_hash
-from lifttrack.v2.dbhelper import get_db, FirebaseDBHelper
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, Request, Response, status
 from fastapi.responses import JSONResponse
-
 from slowapi import Limiter
-from slowapi.util import get_remote_address, get_ipaddr
+from slowapi.util import get_remote_address
+
+from lifttrack import network_logger
+from lifttrack.models import User
+from lifttrack.auth import LiftTrackAuthenticator
+from lifttrack.utils.logging_config import log_network_io
+
+from core.services import UserService
+from infrastructure.database import DatabaseFactory
+from infrastructure import get_admin_firebase_db
+from interfaces.api.schemas import UserCreateSchema, UserUpdateSchema
+from interfaces.api import (
+    RESPONSE_201, 
+    RESPONSE_200, 
+    RESPONSE_400, 
+    RESPONSE_401, 
+    RESPONSE_404, 
+    RESPONSE_405, 
+    RESPONSE_412, 
+    RESPONSE_422, 
+    RESPONSE_500, 
+    RESPONSE_503
+)
+from utilities.monitoring.factory import MonitoringFactory
+
+logger = MonitoringFactory.get_logger("v2-user-router")
 
 router = APIRouter(
     prefix="/v2",
     tags=["v2-user"],
-    responses={404: {"description": "Not found"}}
+    responses={
+        200: RESPONSE_200,
+        201: RESPONSE_201,
+        400: RESPONSE_400,
+        401: RESPONSE_401,
+        404: RESPONSE_404,
+        405: RESPONSE_405,
+        412: RESPONSE_412,
+        422: RESPONSE_422,
+        500: RESPONSE_500,
+        503: RESPONSE_503
+    }
 )
+limiter = Limiter(key_func=get_remote_address)
 
+# Instead, create a dependency function
+def get_user_service(db: DatabaseFactory = Depends(get_admin_firebase_db)):
+    auth_service = LiftTrackAuthenticator(database=db)
+    return UserService(
+        database=db,
+        password_service=auth_service,
+        input_validator=auth_service
+    )
 
 @router.post("/users", response_model=User, status_code=201)
-async def create_user(user: User, db: FirebaseDBHelper = Depends(get_db)):
+@limiter.limit("5/minute")
+async def create_user(
+    request: Request, 
+    response: Response,
+    user_service: UserService = Depends(get_user_service),
+    user: UserCreateSchema = Body(..., example={
+        "first_name": "John",
+        "last_name": "Doe",
+        "username": "johndoe",
+        "email": "john.doe@example.com",
+        "phone_number": "09123456789",
+        "password": "Password123!"
+    })
+):
     """
         Create a new user in the Firebase database.
         
@@ -30,94 +84,101 @@ async def create_user(user: User, db: FirebaseDBHelper = Depends(get_db)):
             User: Created user details
     """
     try:
-        user_data = user.model_dump()
-        user_data['password'] = get_password_hash(user_data['password'])
-        
-        # Check for existing username using RTDB query
-        existing_data = db.query_data(
-            'users',
-            order_by='username',
-            start_at=user.username,
-            end_at=user.username
+        result = await user_service.create_user(
+            username=user.username,
+            email=user.email,
+            password=user.password,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            phone_number=user.phone_number
         )
         
-        if existing_data:
-            raise HTTPException(status_code=400, detail="Username already exists")
+        if not result:
+            logger.error(f"User creation failed: {result}")
+            return JSONResponse(
+                content={"msg": "User creation failed."},
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
         
-        # Add user to Firebase RTDB
-        user_id = db.set_data(path='users', data=user_data, key=user_data['username'])
-        user_data['id'] = user_id
-        
-        return JSONResponse(content=user_data)
+        return JSONResponse(
+            content={"msg": "User created successfully"},
+            status_code=status.HTTP_201_CREATED
+        )
+    except ValidationError as ve:
+        logger.error(f"Validation error in create_user: {str(ve)}")
+        return JSONResponse(
+            content={"msg": str(ve)},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+        logger.exception(f"Error in create_user: {e}")
+        return JSONResponse(
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url.path, 
+            method=request.method, 
+            response_status=response.status_code
+        )
 
 
-@router.get("/users", response_model=List[User])
-async def list_users(
-    db: FirebaseDBHelper = Depends(get_db),
-    is_authenticated: Optional[bool] = False,
-    is_deleted: Optional[bool] = False
+@router.get("/users/{username}", response_model=List[User])
+@limiter.limit("20/minute")
+async def get_users(
+    request: Request, 
+    response: Response,
+    username: str,
+    user_service: UserService = Depends(get_user_service)
 ):
     """
     Retrieve users with optional age filtering.
     
     Args:
-        db (FirebaseDBHelper): Database connection
-        age_min (Optional[int]): Minimum age filter
-        age_max (Optional[int]): Maximum age filter
+        is_authenticated (Optional[bool]): Filter by authentication status
+        is_deleted (Optional[bool]): Filter by deletion status
     
     Returns:
         List[User]: List of user details
     """
     try:
-        # Get all users first
-        users_data = db.query_data(
-            'users',
-            order_by='username'
+        user_data = await user_service.get_user(username)
+        
+        if not user_data:
+            logger.error(f"User not found: {user_data}")
+            return JSONResponse(
+                content={"msg": "User not found"},
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+        
+        return JSONResponse(
+            content=user_data,
+            status_code=status.HTTP_200_OK
         )
-        
-        if not users_data:
-            return []
-        
-        # Convert to list if it's a dictionary
-        if isinstance(users_data, dict):
-            users_list = [
-                {'id': key, **value} 
-                for key, value in users_data.items()
-            ]
-        else:
-            users_list = users_data
-            
-        # Apply filters manually
-        filtered_users = [
-            user for user in users_list
-            if user.get('isAuthenticated', False) == is_authenticated
-            and user.get('isDeleted', False) == is_deleted
-        ]
-        
-        return [
-            User(
-                user_id=user.get('id', ''),
-                username=user.get('username', ''),
-                email=user.get('email', ''),
-                fname=user.get('fname', ''),  # Added required field
-                lname=user.get('lname', ''),  # Added required field
-                phoneNum=user.get('phoneNum', ''),  # Added required field
-                password=user.get('password', ''),  # Added required field
-                is_authenticated=user.get('isAuthenticated', False),
-                is_deleted=user.get('isDeleted', False)
-            ) for user in filtered_users
-        ]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve users: {str(e)}")
+        logger.exception(f"Error in get_users: {e}")
+        return JSONResponse(
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url.path, 
+            method=request.method, 
+            response_status=response.status_code
+        )
 
 
-@router.put("/users/{user_id}")
+@router.put("/users/{username}")
 async def update_user(
-    user_id: str, 
-    update_data: User, 
-    db: FirebaseDBHelper = Depends(get_db)
+    request: Request, 
+    response: Response,
+    username: str, 
+    update_data: UserUpdateSchema,
+    user_service: UserService = Depends(get_user_service)
 ):
     """
     Update an existing user's information.
@@ -132,29 +193,77 @@ async def update_user(
     """
     try:
         # Check if user exists
-        existing_user = db.get_data('users', user_id)
+        existing_user = await user_service.get_user(username)
         if not existing_user:
-            raise HTTPException(status_code=404, detail="User not found")
-            
-        # Convert Pydantic model to dict, removing None values
-        update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
+            logger.error(f"User not found: {existing_user}")
+            return JSONResponse(
+                content={"msg": "User not found"},
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get only the fields that were provided in the update request
+        update_fields = update_data.model_dump(
+            exclude_unset=True,
+            exclude_none=True
+        )
+        
+        if not update_fields:
+            return JSONResponse(
+                content={"msg": "No fields to update"},
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Merge update data with existing user data
+        merged_data = {**existing_user, **update_fields}
+        
+        # Create entity from merged data
+        user_entity = UserUpdateSchema(**merged_data).to_entity()
         
         # Perform update
-        success = db.update_data('users', user_id, update_dict)
+        success = await user_service.update_user(
+            username=username,
+            user_data=user_entity
+        )
         
         if not success:
-            raise HTTPException(status_code=500, detail="Failed to update user")
+            logger.error(f"User update failed: {success}")
+            return JSONResponse(
+                content={"msg": "User update failed"},
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
         
-        return JSONResponse({"message": "User updated successfully"})
-    
-    except HTTPException as he:
-        raise he
+        return JSONResponse(
+            content={"msg": "User updated successfully"},
+            status_code=status.HTTP_200_OK
+        )
+    except ValidationError as ve:
+        logger.error(f"Validation error in update_user: {str(ve)}")
+        return JSONResponse(
+            content={"msg": str(ve)},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"User update failed: {str(e)}")
+        logger.exception(f"Error in update_user: {e}")
+        return JSONResponse(
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url.path, 
+            method=request.method, 
+            response_status=response.status_code
+        )
 
 
-@router.delete("/users/{user_id}")
-async def delete_user(user_id: str, db: FirebaseDBHelper = Depends(get_db)):
+@router.delete("/users/{username}")
+async def delete_user(
+    request: Request, 
+    response: Response, 
+    username: str,
+    user_service: UserService = Depends(get_user_service)
+):
     """
     Delete a user from the database.
     
@@ -167,19 +276,39 @@ async def delete_user(user_id: str, db: FirebaseDBHelper = Depends(get_db)):
     """
     try:
         # Check if user exists
-        existing_user = db.get_data('users', user_id)
+        existing_user = await user_service.get_user(username)
         if not existing_user:
-            raise HTTPException(status_code=404, detail="User not found")
+            logger.error(f"User not found: {existing_user}")
+            return JSONResponse(
+                content={"msg": "User not found"},
+                status_code=status.HTTP_404_NOT_FOUND
+            )
             
         # Perform deletion
-        success = db.delete_data('users', user_id)
+        success = await user_service.delete_user(username)
         
         if not success:
-            raise HTTPException(status_code=500, detail="Failed to delete user")
+            logger.error(f"User deletion failed: {success}")
+            return JSONResponse(
+                content={"msg": "User deletion failed"},
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
         
-        return {"message": "User deleted successfully"}
+        return JSONResponse(
+            content={"msg": "User deleted successfully"},
+            status_code=status.HTTP_200_OK
+        )
     
-    except HTTPException as he:
-        raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"User deletion failed: {str(e)}")
+        logger.exception(f"Error in delete_user: {e}")
+        return JSONResponse(
+            content={"msg": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url.path, 
+            method=request.method, 
+            response_status=response.status_code
+        )

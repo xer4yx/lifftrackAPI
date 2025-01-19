@@ -1,12 +1,15 @@
 import firebase_admin
 from firebase_admin import credentials, db
-
-from typing import Any, Dict, Optional, List, Callable
+from typing import Any, Dict, Optional, List
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
+from core.interfaces import DatabaseRepository
+from utilities.monitoring.factory import MonitoringFactory
 
-class FirebaseDBHelper:
+logger = MonitoringFactory.get_logger("admin-rtdb")
+
+class FirebaseDBHelper(DatabaseRepository):
     """
     A comprehensive database helper class for Firebase Realtime Database 
     with connection pooling and advanced error handling.
@@ -40,6 +43,7 @@ class FirebaseDBHelper:
                             cred = credentials.Certificate(credentials_path)
                             if not firebase_admin._apps:
                                 if not options or 'databaseURL' not in options:
+                                    logger.error("databaseURL must be provided in options")
                                     raise ValueError("databaseURL must be provided in options")
                                 firebase_admin.initialize_app(
                                     credential=cred, 
@@ -53,12 +57,12 @@ class FirebaseDBHelper:
                         )
                         cls._instance._db = db.reference()
                     except Exception as e:
-                        print(f"Firebase initialization error: {e}")
+                        logger.error(f"Firebase initialization error: {e}")
                         raise
         
         return cls._instance
     
-    def get_reference(self, path: str):
+    def get_reference(self, path: str) -> db.Reference:
         """
         Get a reference to a specific path in the Realtime Database.
         
@@ -68,7 +72,11 @@ class FirebaseDBHelper:
         Returns:
             db.Reference: Reference to the specified location
         """
-        return self._db.child(path)
+        try:
+            return self._db.child(path)
+        except Exception as e:
+            logger.error(f"Exception at {self.__class__.__name__}.{self.get_reference.__name__}: {e}")
+            raise
     
     def set_data(self, path: str, data: Dict[str, Any], key: Optional[str] = None) -> str:
         """
@@ -90,7 +98,7 @@ class FirebaseDBHelper:
             else:
                 return ref.push(data).key
         except Exception as e:
-            print(f"Error adding data: {e}")
+            logger.error(f"Exception at {self.__class__.__name__}.{self.set_data.__name__}: {e}")
             raise
         
     def push_data(self, path: str, data: Dict[str, Any], key: Optional[str] = None) -> str:
@@ -113,7 +121,7 @@ class FirebaseDBHelper:
             else:
                 return ref.push(data).key
         except Exception as e:
-            print(f"Error adding data: {e}")
+            logger.error(f"Exception at {self.__class__.__name__}.{self.push_data.__name__}: {e}")
             raise
     
     def get_data(self, path: str, key: str) -> Optional[Dict[str, Any]]:
@@ -130,7 +138,7 @@ class FirebaseDBHelper:
         try:
             return self.get_reference(path).child(key).get()
         except Exception as e:
-            print(f"Error retrieving data: {e}")
+            logger.error(f"Exception at {self.__class__.__name__}.{self.get_data.__name__}: {e}")
             raise
     
     def update_data(self, path: str, key: str, update_data: Dict[str, Any]) -> bool:
@@ -146,7 +154,7 @@ class FirebaseDBHelper:
             self.get_reference(path).child(key).update(update_data)
             return True
         except Exception as e:
-            print(f"Error updating data: {e}")
+            logger.error(f"Exception at {self.__class__.__name__}.{self.update_data.__name__}: {e}")
             return False
     
     def delete_data(self, path: str, key: str) -> bool:
@@ -161,7 +169,7 @@ class FirebaseDBHelper:
             self.get_reference(path).child(key).delete()
             return True
         except Exception as e:
-            print(f"Error deleting data: {e}")
+            logger.error(f"Exception at {self.__class__.__name__}.{self.delete_data.__name__}: {e}")
             return False
     
     def query_data(self, path: str, 
@@ -196,7 +204,66 @@ class FirebaseDBHelper:
             
             return ref.get()
         except Exception as e:
-            print(f"Query error: {e}")
+            logger.error(f"Exception at {self.__class__.__name__}.{self.query_data.__name__}: {e}")
+            return []
+        
+    async def set(self, path: str, data: Dict[str, Any], key: Optional[str] = None) -> str:
+        try:
+            reference = self.get_reference(path)
+            if key:
+                reference.child(key).set(data)
+                return key
+            else:
+                return reference.push(data).key
+        except Exception as e:
+            logger.error(f"Exception at {self.__class__.__name__}.{self.set.__name__}: {e}")
+            raise
+            
+    async def push(self, path: str, data: Dict[str, Any]) -> str:
+        """Push data to specified path"""
+        try:
+            reference = self.get_reference(path)
+            return reference.push(data).key
+        except Exception as e:
+            logger.error(f"Exception at {self.__class__.__name__}.{self.push.__name__}: {e}")
+            raise
+        
+    async def get(self, path: str, key: str) -> Optional[Dict[str, Any]]:
+        """Get data from specified path"""
+        try:
+            reference = self.get_reference(path)
+            return reference.child(key).get()
+        except Exception as e:
+            logger.error(f"Exception at {self.__class__.__name__}.{self.get.__name__}: {e}")
+            raise
+        
+    async def update(self, path: str, key: str, data: Dict[str, Any]) -> bool:
+        """Update data at specified path"""
+        try:
+            reference = self.get_reference(path)
+            reference.child(key).update(data)
+            return True
+        except Exception as e:
+            logger.error(f"Exception at {self.__class__.__name__}.{self.update.__name__}: {e}")
+            return False
+        
+    async def delete(self, path: str, key: str) -> bool:
+        """Delete data at specified path"""
+        try:
+            reference = self.get_reference(path)
+            reference.child(key).delete()
+            return True
+        except Exception as e:
+            logger.error(f"Exception at {self.__class__.__name__}.{self.delete.__name__}: {e}")
+            return False
+        
+    async def query(self, path: str, order_by: Optional[str] = None, limit: Optional[int] = None, start_at: Optional[Any] = None, end_at: Optional[Any] = None) -> List[Dict[str, Any]]:
+        """Query data with filters"""
+        try:
+            reference = self.get_reference(path)
+            return reference.order_by_child(order_by).limit_to_first(limit).start_at(start_at).end_at(end_at).get()
+        except Exception as e:
+            logger.error(f"Exception at {self.__class__.__name__}.{self.query.__name__}: {e}")
             return []
     
     def close(self):

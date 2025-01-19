@@ -1,21 +1,48 @@
-import re
 from datetime import datetime
 from typing import Optional, Union, Dict, Any
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel, ConfigDict, Field
+from core.entities.user import User as UserEntity
 
 class User(BaseModel):
-    id: Optional[str] = datetime.strftime(datetime.now(), '%Y%H%d%m')
-    fname: str
-    lname: str
-    username: str
-    phoneNum: str
-    email: str
-    password: str
-    pfp: Optional[str] = None
-    isAuthenticated: Optional[bool] = False
-    isDeleted: Optional[bool] = False
+    """
+    User base model for the application.
+    """
+    model_config = ConfigDict(
+        extra="allow"
+    )
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    username: Optional[str] = None
+    phone_number: Optional[str] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
+    profile_picture: Optional[str] = None
+    is_authenticated: Optional[bool] = False
+    is_deleted: Optional[bool] = False
+
+    def to_entity(self) -> UserEntity:
+        """Convert Pydantic User model to User entity"""
+        entity_data = {}
+        for field, value in self.model_dump(exclude_unset=True).items():
+            if value is not None:
+                entity_data[field] = value
+        return UserEntity(**entity_data)
+
+    @classmethod
+    def from_entity(cls, entity: UserEntity) -> 'User':
+        """Create Pydantic User model from User entity"""
+        return cls(
+            username=entity.username,
+            email=entity.email,
+            password=entity.password,
+            first_name=entity.first_name,
+            last_name=entity.last_name,
+            phone_number=entity.phone_number,
+            profile_picture=entity.profile_picture,
+            is_authenticated=entity.is_authenticated,
+            is_deleted=entity.is_deleted
+        )
 
 
 class LoginForm(BaseModel):

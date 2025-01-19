@@ -21,12 +21,12 @@ logger = setup_logger("analyzer-v2", "comvis.log")
 class ThreeDimInference:
     def __init__(self):
         try:
-            self.__model = tf.keras.models.load_model(config.get('CNN', 'test-0.1.0'), compile=False)  # Don't load optimizer
+            self.__model = tf.keras.models.load_model(config.get('CNN', 'lifttrack_cnn_bypass'), compile=False)  # Don't load optimizer
             logger.info("Analyzer model loaded successfully")
         except Exception as e:
             logger.error(f"Error loading primary model: {e}")
             try:
-                fallback_path = config.get('CNN', 'lifttrack_cnn_lite')
+                fallback_path = config.get('CNN', 'lifttrack_cnn_bypass')
                 self.__model = tf.keras.models.load_model(fallback_path, compile=False)
                 logger.info(f"Analyzer model loaded successfully from fallback path: {fallback_path}")
             except Exception as e:

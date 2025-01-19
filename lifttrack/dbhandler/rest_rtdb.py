@@ -1,18 +1,20 @@
-import logging
 from firebase import firebase
-from lifttrack import config
-from lifttrack.utils.logging_config import setup_logger
-from typing import Dict, Optional
-from lifttrack.models import Exercise, Progress, ExerciseData
+from typing import Any, Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor
-from functools import wraps
+from functools import partial
+import asyncio
 
+from lifttrack import config
+
+from core.exceptions import QueryError
+from core.interfaces import DatabaseRepository
+
+from utilities.monitoring import MonitoringFactory
 
 # Logging Configuration
-logger = setup_logger("rtdbHelper", "lifttrack_db.log") 
+logger = MonitoringFactory.get_logger("rest-rtdb")
 
-
-class RTDBHelper:
+class RTDBHelper(DatabaseRepository):
     def __init__(self, dsn=None, authentication=None, max_workers=5):
         self.__dsn = config.get(section='Firebase', option='RTDB_DSN') or dsn
         self.__auth = config.get(section='Firebase', option='RTDB_AUTH') or authentication
@@ -34,239 +36,102 @@ class RTDBHelper:
         
         return self.__connections[thread_id]
 
-    def _with_connection(func):
-        """Decorator to handle database connections."""
-        @wraps(func)
-        def wrapper(self, *args, **kwargs):
+    async def _run_in_executor(self, func, *args, **kwargs):
+        """Run synchronous Firebase operations in a thread pool."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self.__pool, partial(func, *args, **kwargs))
+
+    async def set(self, path: str, data: Dict[str, Any], key: Optional[str] = None) -> str:
+        """Set data at specified path"""
+        try:
             db = self._get_connection()
-            try:
-                return func(self, db, *args, **kwargs)
-            except Exception as e:
-                logger.exception(f"Database operation failed: {str(e)}")
-                raise
-        return wrapper
-
-    @_with_connection
-    def put_data(self, db, user_data: dict[str, any]):
-        """
-        Adds a new user to the database via HTTP PUT request.
-        """
-        try:
-            logger.debug(f"Attempting to create user with data: {user_data}")
-            future = self.__pool.submit(
-                db.put,
-                url='/users',
-                name=user_data['username'],
-                data=user_data
-            )
-            snapshot = future.result()
-            if snapshot is None:
-                logger.error(f"Failed to create user: {user_data['username']}")
-                raise ValueError('User not created')
-            logger.info(f"User created successfully: {user_data['username']}")
+            result = await self._run_in_executor(db.put, path, key, data)
+            return str(result) if result else ""
         except Exception as e:
-            logger.exception(f"Exception in put_data for user {user_data['username']}: {e}")
-            raise
-    
-    @_with_connection
-    def get_data(self, db, username, data=None):
-        """
-        Retrieves user data from the database.
-
-        :param username: Username of the user.
-        :param data: Specific field to retrieve.
-        :return: User data or specific field.
-        """
-        try:
-            snapshot = db.get(
-                url=f'/users/{username}',
-                name=data
-            )
-            if snapshot is None:
-                logger.warning(f"Data not found for user: {username}")
-            else:
-                logger.info(f"Data retrieved for user: {username}")
-            return snapshot
-        except Exception as e:
-            logger.exception(f"Exception in get_data for user {username}: {e}")
-            raise
-    
-    @_with_connection
-    def get_all_data(self, db):
-        """
-        Retrieves all user data from the database.
-        """
-        return db.get('/users', None)
-
-    @_with_connection
-    def update_data(self, db, username, user_data):
-        """
-        Updates user data in the database.
-
-        :param username: Username of the user.
-        :param user_data: Data to update.
-        :return: Snapshot of updated data.
-        """
-        try:
-            snapshot = db.put(
-                url=f'/users',
-                name=username,
-                data=user_data
-            )
-            if snapshot is None:
-                logger.error(f"Failed to update user: {username}")
-            else:
-                logger.info(f"User updated successfully: {username}")
-            return snapshot
-        except Exception as e:
-            logger.exception(f"Exception in update_data for user {username}: {e}")
+            logger.error(f"Error in set operation: {e}")
             raise
 
-    @_with_connection
-    def delete_data(self, db, username):
-        """
-        Deletes a user from the database.
-
-        :param username: Username of the user to delete.
-        :return: True if deleted, else False.
-        """
+    async def push(self, path: str, data: Dict[str, Any]) -> str:
+        """Push data to specified path"""
         try:
-            deleted = db.delete(
-                url=f'/users',
-                name=username
-            )
-            if deleted is False:
-                logger.error(f"Failed to delete user: {username}")
-            else:
-                logger.info(f"User deleted successfully: {username}")
-            return deleted
+            db = self._get_connection()
+            result = await self._run_in_executor(db.post, path, data)
+            return str(result.get('name')) if result else ""
         except Exception as e:
-            logger.exception(f"Exception in delete_data for user {username}: {e}")
+            logger.error(f"Error in push operation: {e}")
             raise
 
-    @_with_connection
-    def put_progress(self, db, username: str, exercise: Exercise):
-        """
-        Adds exercise progress data for a user. New data is appended under the date,
-        not updated.
-        
-        Args:
-            username: Username of the user
-            exercise_name: Name of the exercise
-            exercise_data: ExerciseData object containing the progress data
-        """
+    async def get(self, path: str, key: str) -> Optional[Dict[str, Any]]:
+        """Get data from specified path"""
         try:
-            # Save to database
-            future = self.__pool.submit(
-                db.put,
-                url=f'/progress',
-                name=username,
-                data=exercise.model_dump()
-            )
-            snapshot = future.result()
-            
-            if snapshot is None:
-                logger.error(f"Failed to save progress for user: {username}")
-                raise ValueError('Progress not saved')
-            logger.info(f"Progress saved successfully for user: {username}")
-            
+            db = self._get_connection()
+            result = await self._run_in_executor(db.get, path, key)
+            return result
         except Exception as e:
-            logger.exception(f"Exception in put_progress for user {username}: {e}")
+            logger.error(f"Error in get operation: {e}")
             raise
 
-    @_with_connection
-    def get_progress(self, db, username: str, exercise_name: Optional[str] = None) -> Optional[Dict]:
-        """
-        Retrieves progress data from the database.
-
-        Args:
-            username: Username of the user
-            exercise_name: Optional specific exercise to retrieve
-        Returns:
-            Progress data dictionary or None
-        """
+    async def update(self, path: str, key: str, data: Dict[str, Any]) -> bool:
+        """Update data at specified path"""
         try:
-            snapshot = db.get(
-                url=f'/progress/{username}',
-                name=None
-            )
+            db = self._get_connection()
             
-            if snapshot is None:
-                logger.warning(f"Progress data not found for user: {username}")
-                return None
+            existing_data = await self.get(path, key)
+            if existing_data is None:
+                raise QueryError(f"User not found: {key}")
             
-            # Validate against Progress model
-            progress_data = Progress(**snapshot)
+            updated_data = {**existing_data}
+            for field, value in data.items():
+                if value is not None:
+                    updated_data[field] = value
             
-            if exercise_name:
-                if exercise_name in progress_data.exercise:
-                    return {"username": username, "exercise": {
-                        exercise_name: progress_data.exercise[exercise_name]
-                    }}
-                return None
-            
-            logger.info(f"Progress data retrieved for user: {username}")
-            return progress_data.model_dump()
-            
+            result = await self._run_in_executor(db.put, path, key, updated_data)
+            return bool(result is None)
         except Exception as e:
-            logger.exception(f"Exception in get_progress for user {username}: {e}")
+            logger.error(f"Error in update operation: {e}")
             raise
 
-    @_with_connection
-    def update_progress(self, db, username: str, exercise_name: str, exercise_data: any):
-        """
-        Updates exercise progress data for a user.
-        
-        Args:
-            username: Username of the user
-            exercise_name: Name of the exercise
-            exercise_data: ExerciseData object containing the updated progress data
-        """
+    async def delete(self, path: str, key: str) -> bool:
+        """Delete data at specified path"""
         try:
-            return self.put_progress(username, exercise_name, exercise_data)
+            db = self._get_connection()
+            result = await self._run_in_executor(db.delete, f"{path}/{key}", None)
+            return bool(result is None)
         except Exception as e:
-            logger.exception(f"Exception in update_progress for user {username}: {e}")
+            logger.error(f"Error in delete operation: {e}")
             raise
 
-    @_with_connection
-    def delete_progress(self, db, username: str, exercise_name: Optional[str] = None):
-        """
-        Deletes progress data from the database.
-
-        Args:
-            username: Username of the user
-            exercise_name: Optional specific exercise to delete
-        Returns:
-            True if deleted, else False
-        """
+    async def query(
+        self,
+        path: str,
+        order_by: Optional[str] = None,
+        limit: Optional[int] = None,
+        start_at: Optional[Any] = None,
+        end_at: Optional[Any] = None
+    ) -> List[Dict[str, Any]]:
+        """Query data with filters"""
         try:
-            if exercise_name:
-                # Delete specific exercise
-                existing_data = self.get_progress(username)
-                if existing_data and "exercise" in existing_data:
-                    if exercise_name in existing_data["exercise"]:
-                        del existing_data["exercise"][exercise_name]
-                        snapshot = db.put(
-                            url='/progress',
-                            name=username,
-                            data=existing_data
-                        )
-                        return snapshot is not None
-                return False
-            else:
-                # Delete all progress
-                deleted = db.delete(
-                    url='/progress',
-                    name=username
-                )
-                if deleted is False:
-                    logger.error(f"Failed to delete progress for user: {username}")
-                else:
-                    logger.info(f"Progress deleted successfully for user: {username}")
-                return deleted
-                
+            db = self._get_connection()
+            
+            # For simple key lookups, don't use orderBy
+            if start_at and not order_by:
+                result = await self._run_in_executor(db.get, f"{path}/{start_at}", None)
+                return [result] if result else []
+            
+            # For complex queries, use the query parameters
+            params = {
+                'orderBy': f'"{order_by}"' if order_by else None,  # Wrap orderBy value in quotes
+                'limitToFirst': limit,
+                'startAt': f'"{start_at}"' if start_at else None,  # Wrap startAt value in quotes
+                'endAt': f'"{end_at}"' if end_at else None  # Wrap endAt value in quotes
+            }
+            # Remove None values from params
+            params = {k: v for k, v in params.items() if v is not None}
+            
+            result = await self._run_in_executor(db.get, path, None, params)
+            return result if result else []
         except Exception as e:
-            logger.exception(f"Exception in delete_progress for user {username}: {e}")
+            logger.error(f"Error in query operation: {e}")
             raise
 
     def __del__(self):

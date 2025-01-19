@@ -2,9 +2,10 @@ import asyncio
 import base64
 import cv2
 import numpy as np
+from typing import Annotated
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
+from .management import ConnectionManager
 
-from lifttrack.utils.logging_config import setup_logger
 from lifttrack.comvis import websocket_process_frames
 from lifttrack.v2.comvis import (
     movenet_inference, 
@@ -19,19 +20,29 @@ from lifttrack.v2.comvis.features import (
     calculate_stability
 )
 from lifttrack.v2.comvis.progress import calculate_form_accuracy
-from lifttrack.v2.dbhelper import get_db
-from lifttrack.v2.dbhelper.admin_rtdb import FirebaseDBHelper
 
-from lifttrack.models import Exercise, ExerciseData, Features, Object
-from lifttrack.dbhandler.rest_rtdb import rtdb
+
+from infrastructure import get_admin_firebase_db
+from infrastructure.database import DatabaseFactory
+from .management import ConnectionManager
+from utilities.monitoring.factory import MonitoringFactory
+
+
+from lifttrack.models import ExerciseData, Features, Object
+
+frame_timeout = 30  # Default 60 second timeout
+max_frames = 1800   # Default max frames (1 minute at 30fps)
 
 router = APIRouter()
-logger = setup_logger("websocket", "protocols.log")
-
+logger = MonitoringFactory.get_logger("websocket")
+connection_manager = ConnectionManager()
 
 # API Endpoint [Frame Operations]
-@router.websocket("/ws-tracking")  # Mobile version
-async def websocket_inference(websocket: WebSocket):
+@router.websocket(path="/ws-tracking")  # Mobile version
+async def websocket_inference(
+    websocket: WebSocket,
+    user_id: str = Query(..., description="Unique identifier for the user")
+):
     """
     Endpoint for the WebSocket video feed. The server receives frames from the client that's formatted as a base64
     bytes. The server decodes the frame in a thread pool, processes the frame to get inference and annotations, and
@@ -40,86 +51,76 @@ async def websocket_inference(websocket: WebSocket):
     Args:
         websocket: WebSocket object.
     """
-    await websocket.accept()
-    connection_open = True
-    model = None
-    while connection_open:
-        try:
-            # Expected format from client side is:
-            # {"type": "websocket.receive", "text": data}
-            frame_data = await websocket.receive()
+    try:
+        await connection_manager.connect(websocket, user_id)
+        connection_open = True
+        model = None
+    
+        while connection_open:
+            try:
+                # Handle both bytes and dict messages
+                frame_data = await websocket.receive()
 
-            if frame_data["type"] == "websocket.close":
+                # Check if it's a close message
+                if frame_data["type"] == "websocket.close":
+                    connection_open = False
+                    break
+
+                # Get frame bytes either from direct bytes or from dict
+                frame_byte = frame_data.get("bytes")
+                if not isinstance(frame_byte, bytes):
+                    break
+
+                # Process frame
+                (annotated_frame, _) = await asyncio.get_event_loop().run_in_executor(
+                    None, websocket_process_frames, model, frame_byte
+                )
+
+                # Encode and send response
+                encoded, buffer = cv2.imencode(".jpeg", annotated_frame)
+                if not encoded:
+                    raise WebSocketDisconnect
+
+                return_bytes = base64.b64decode(buffer.tobytes())
+                await websocket.send_bytes(return_bytes)
+
+            except WebSocketDisconnect:
                 connection_open = False
-                break
-
-            # frame_byte = base64.b64decode(frame_data["bytes"])
-            frame_byte = frame_data.get("bytes")
-
-            if not isinstance(frame_byte, bytes):
-                await websocket.close()
-                break
-
-            # Process frame in thread pool to avoid blocking
-            (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
-                None, websocket_process_frames, model, frame_byte
-            )
-
-            # Encode and send result
-            encoded, buffer = cv2.imencode(".jpeg", annotated_frame)
-
-            if not encoded:
-                raise WebSocketDisconnect
-
-            return_bytes = base64.b64decode(buffer.tobytes())
-
-            # Expected return to the client side is:
-            # {"type": "websocket.send", "bytes": data}
-            await websocket.send_bytes(return_bytes)
-        except WebSocketDisconnect:
-            connection_open = False
-        except Exception as e:
-            logger.exception(f"WebSocket error: {e}")
-            connection_open = False
-        finally:
-            if not connection_open:
-                await websocket.close()
+            except Exception as e:
+                logger.exception(f"WebSocket error: {e}")
+                connection_open = False
+    finally:
+        await connection_manager.disconnect(user_id)
 
 
-@router.websocket("/v2/ws-tracking")
+@router.websocket(path="/v2/ws-tracking")
 async def websocket_endpoint(
     websocket: WebSocket,
+    db: Annotated[DatabaseFactory, Depends(get_admin_firebase_db)],
     username: str = Query(..., description="Username of the person exercising"),
-    exercise_name: str = Query(..., description="Name of the exercise being performed"),
-    db: FirebaseDBHelper = Depends(get_db)
-    ):
+    exercise_name: str = Query(..., description="Name of the exercise being performed")
+):
     await websocket.accept()
     
-    frames_buffer = []  # Initialize buffer
-    
     try:
+        await connection_manager.connect(websocket, username)
+        
         if not username or not exercise_name:
             raise ValueError("Both username and exercise_name are required")
             
         logger.info(f"Starting tracking session for user: {username}, exercise: {exercise_name}")
-    except Exception as e:
-        logger.error(f"Failed to get initialization data: {str(e)}")
-        frames_buffer.clear()
-        await websocket.close()
-        return
-
-    frame_count = 0
-    max_frames = 1800
-    last_frame_time = asyncio.get_event_loop().time()
-    frame_timeout = 60.0
-    
-    previous_frame = 29
-    frame_buffer_size = 30  # Only keep last 30 frames for analysis
-    frames_buffer = []
-    last_analysis_time = asyncio.get_event_loop().time()
-    analysis_interval = 1.0  # Perform analysis every 1 second instead of every 30 frames
-    
-    try:
+        
+        frame_count = 0
+        max_frames = 1800
+        last_frame_time = asyncio.get_event_loop().time()
+        frame_timeout = 60.0
+        
+        previous_frame = 29
+        frame_buffer_size = 30  # Only keep last 30 frames for analysis
+        frames_buffer = []
+        last_analysis_time = asyncio.get_event_loop().time()
+        analysis_interval = 1.0  # Perform analysis every 1 second instead of every 30 frames
+        
         while frame_count < max_frames:
             try:
                 # Check for timeout
@@ -231,16 +232,6 @@ async def websocket_endpoint(
                             frame=f"frame_{frame_count}"
                         )
                         
-                        # Create Exercise object and set the specific exercise data
-                        # exercise = Exercise()
-                        # exercise.set_exercise_data(exercise_name, exercise_data)
-
-                        # Store in database
-                        # rtdb.put_progress(
-                        #     username=username,
-                        #     exercise=exercise
-                        # )
-                        
                         # Format the date and time to be Firebase-safe
                         exercise_datetime = exercise_data_base_model.date.split('.')[0]  # Remove microseconds
                         safe_datetime = exercise_datetime.replace(':', '-')
@@ -251,7 +242,7 @@ async def websocket_endpoint(
                         
                         # Store under: progress/username/exercise_name/datetime/second_X
                         time_key = f"second_{seconds}"
-                        user_id = db.set_data(
+                        user_id = db.set(
                             path=f'progress/{username}/{exercise_name.lower()}/{safe_datetime}', 
                             data=exercise_data_dict,
                             key=time_key
@@ -274,6 +265,10 @@ async def websocket_endpoint(
                     'frame': base64.b64encode(buffer).decode('utf-8'),
                     'type': 'frame'
                 })
+
+                # Update the buffer with the processed frame
+                connection_manager.update_buffer(username, frame)
+                connection_manager.increment_frame_count(username)
 
             except WebSocketDisconnect:
                 logger.info(f"Client disconnected after processing {frame_count} frames")
@@ -312,3 +307,4 @@ async def websocket_endpoint(
         # Ensure buffer is cleared even if we hit an unexpected error
         frames_buffer.clear()
         logger.info("WebSocket connection closed and buffer cleared")
+        await connection_manager.disconnect(username)

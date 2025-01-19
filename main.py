@@ -1,17 +1,5 @@
 import threading
 
-from lifttrack import timedelta, threading, network_logger
-from lifttrack.utils.logging_config import log_network_io, setup_logger
-from lifttrack.utils.syslogger import log_cpu_and_mem_usage, start_resource_monitoring
-from lifttrack.dbhandler.rest_rtdb import rtdb
-from lifttrack.models import User, Token, AppInfo, LoginForm
-from lifttrack.auth import (
-    create_access_token,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    get_current_user,
-    verify_password
-)
-
 from fastapi import (
     FastAPI, 
     Depends, 
@@ -28,10 +16,21 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
+from lifttrack import timedelta, threading, network_logger
+from lifttrack.utils.logging_config import log_network_io, setup_logger
+from lifttrack.utils.syslogger import log_cpu_and_mem_usage, start_resource_monitoring
+from lifttrack.dbhandler.rest_rtdb import rtdb
+from lifttrack.models import User, Token, AppInfo, LoginForm
+from lifttrack.auth import (
+    create_access_token,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    get_current_user,
+    verify_password
+)
+
 from routers.UsersRouter import router as users_router
 from routers.ProgressRouter import router as progress_router
 from routers.WebsocketRouter import router as websocket_router
-
 from routers.v2.UsersRouter import router as v2_users_router
 
 # Initialize FastAPI app
@@ -41,8 +40,6 @@ app = FastAPI()
 app.include_router(users_router)
 app.include_router(progress_router)
 app.include_router(websocket_router)
-
-# v2 API Routers
 app.include_router(v2_users_router)
 
 # Initialize Limiter
@@ -104,7 +101,7 @@ async def read_root(request: Request):
     finally:
         log_network_io(
             logger=network_logger, 
-            endpoint=request.url, 
+            endpoint=request.url.path, 
             method=request.method, 
             response_status=response.status_code
         )
@@ -117,7 +114,7 @@ async def get_app_info(request: Request):
     """Endpoint to get information about the app."""
     try:
         # Construct the AppInfo object here or retrieve it from a source
-        appinfo = AppInfo()
+        appinfo = AppInfo().model_dump()
         
         response = JSONResponse(
             content=appinfo,
@@ -140,7 +137,7 @@ async def get_app_info(request: Request):
     finally:
         log_network_io(
             logger=network_logger, 
-            endpoint=request.url, 
+            endpoint=request.url.path, 
             method=request.method, 
             response_status=response.status_code
         )
@@ -194,7 +191,7 @@ async def login(login_form: LoginForm, request: Request):
     finally:
         log_network_io(
             logger=network_logger, 
-            endpoint=request.url, 
+            endpoint=request.url.path, 
             method=request.method, 
             response_status=response.status_code
         )
@@ -245,7 +242,7 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
     finally:
         log_network_io(
             logger=network_logger, 
-            endpoint=request.url, 
+            endpoint=request.url.path, 
             method=request.method, 
             response_status=response.status_code
         )
@@ -281,7 +278,7 @@ async def logout(request: Request, current_user: User = Depends(get_current_user
     finally:
         log_network_io(
             logger=network_logger, 
-            endpoint=request.url, 
+            endpoint=request.url.path, 
             method=request.method, 
             response_status=response.status_code
         )
@@ -334,7 +331,7 @@ async def read_users_me(request: Request, current_user: User = Depends(get_curre
     finally:
         log_network_io(
             logger=network_logger, 
-            endpoint=request.url, 
+            endpoint=request.url.path, 
             method=request.method, 
             response_status=response.status_code
         )

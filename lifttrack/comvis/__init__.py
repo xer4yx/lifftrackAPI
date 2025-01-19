@@ -14,8 +14,6 @@ from lifttrack.utils import draw_prediction
 frame_queue = Queue(maxsize=30)
 result_queue = Queue(maxsize=30)
 
-
-# TODO: Implement this function for `extract_features`
 def run_inference(movenet, roboflow, frame: Mat | ndarray):
     """Run both MoveNet and Roboflow inference"""
     
@@ -49,8 +47,6 @@ def run_inference(movenet, roboflow, frame: Mat | ndarray):
 
     return frame_annotation
 
-
-# TODO: Create a `calculate_angle` and `calculate_distance` function
 def extract_features(annotation):
     """Extract features from a single annotation"""
     if not isinstance(annotation, dict):
@@ -135,9 +131,6 @@ def extract_features(annotation):
         1.0  # Reserved for additional features
     ], dtype=np.float32)
 
-
-# TODO: Implement `run_inference` and `extract_features` in this function
-# TODO: Implement 3D CNN inference from `Live.py`
 def websocket_process_frames(analyzer, frame_data: bytes | io.BytesIO):
     """
     Process a single frame for inference.

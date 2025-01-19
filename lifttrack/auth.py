@@ -1,7 +1,7 @@
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -12,6 +12,8 @@ from lifttrack import config
 from lifttrack.dbhandler.rest_rtdb import rtdb
 from lifttrack.models import User, TokenData
 from lifttrack.utils.logging_config import setup_logger
+
+from core.interfaces import TokenService, PasswordService, InputValidator, DatabaseRepository
 
 
 # Configure logging for auth.py
@@ -50,40 +52,44 @@ def remove_from_username_cache(username: str):
     existing_usernames.discard(username)  # Using discard instead of remove to avoid KeyError
 
 
-def validate_input(user: User, is_update: bool = False):
-    """Validates user input and returns the validated user object."""
+def validate_input(data: Dict[str, Any]) -> bool:
+    """Validates user input and returns True if valid, False otherwise."""
     password_pattern = r'^(?=.*[A-Z])(?=.*\d)(?=.*[@$])[A-Za-z\d@$]{8,12}$'
     mobileno_pattern = r'^(?:\+63\d{10}|09\d{9})$'
     email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
     
-    if not is_update:
-        if user.username in existing_usernames:
-            logger.info(f"Attempt to create duplicate username: {user.username}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already exists."
-            )
+    # Extract values from dictionary
+    username = data.get('username')
+    password = data.get('password')
+    phone_number = data.get('phone_number')
+    email = data.get('email')
+    
+    if not username or not password or not phone_number or not email:
+        logger.error("Missing required fields in user data")
+        return False
+    
+    # Check for existing username
+    if username in existing_usernames:
+        logger.info(f"Attempt to create duplicate username: {username}")
+        return False
 
-    if re.match(password_pattern, user.password) is None:
-        raise HTTPException(
-            status_code=status.HTTP_406_NOT_ACCEPTABLE,
-            detail="Password must be 8-12 characters long, with at least one uppercase letter, one digit, and one special character."
-        )
+    # Validate password format
+    if re.match(password_pattern, password) is None:
+        logger.error(f"Invalid password format for user: {username}")
+        return False
 
-    if re.match(mobileno_pattern, user.phoneNum) is None:
-        raise HTTPException(
-            status_code=status.HTTP_406_NOT_ACCEPTABLE,
-            detail="Invalid mobile number."
-        )
+    # Validate phone number format
+    if re.match(mobileno_pattern, phone_number) is None:
+        logger.error(f"Invalid phone number format for user: {username}")
+        return False
 
-    if re.match(email_pattern, user.email) is None:
-        raise HTTPException(
-            status_code=status.HTTP_406_NOT_ACCEPTABLE,
-            detail="Invalid email address."
-        )
+    # Validate email format
+    if re.match(email_pattern, email) is None:
+        logger.error(f"Invalid email format for user: {username}")
+        return False
 
-    logger.info(f"{user.username} updated profile information.")
-    return user  # Return the validated user object
+    logger.info(f"User data validated successfully: {username}")
+    return True
 
 
 def verify_password(plain_password, hashed_password):
@@ -101,9 +107,9 @@ def get_password_hash(password):
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.now() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     logger.info(f"Access token created for user: {data.get('sub')}")
@@ -134,16 +140,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         # Convert dictionary to User model
         user = User(
-            id=user_data.get("id"),
-            fname=user_data.get("fname"),
-            lname=user_data.get("lname"),
             username=user_data.get("username"),
-            phoneNum=user_data.get("phoneNum"),
+            first_name=user_data.get("first_name"),
+            last_name=user_data.get("last_name"),
+            phone_number=user_data.get("phone_number"),
             email=user_data.get("email"),
             password=user_data.get("password"),
-            pfp=user_data.get("pfp"),
-            isAuthenticated=user_data.get("isAuthenticated", False),
-            isDeleted=user_data.get("isDeleted", False)
+            profile_picture=user_data.get("profile_picture"),
+            is_authenticated=user_data.get("is_authenticated", False),
+            is_deleted=user_data.get("is_deleted", False)
         )
         logger.info(f"User retrieved successfully: {username}")
         return user
@@ -177,3 +182,71 @@ def verify_and_update_password(plain_password, hashed_password):
         logger.info(f"Hash scheme updated for {hash_context.default_scheme()}")
         
     return verified
+
+class LiftTrackAuthenticator(TokenService, PasswordService, InputValidator):
+    def __init__(self, database: DatabaseRepository):
+        self.database = database
+        self._validation_errors = []
+        
+    def create_token(self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+        return create_access_token(data, expires_delta)
+    
+    def verify_token(self, token: str) -> Dict[str, Any]:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    
+    def hash_password(self, password: str) -> str:
+        return get_password_hash(password)
+    
+    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+        return verify_password(plain_password, hashed_password)
+    
+    def validate(self, data: Dict[str, Any]) -> bool:
+        """Validates user input and returns True if valid, False otherwise."""
+        self._validation_errors = []  # Reset errors before validation
+        
+        password_pattern = r'^(?=.*[A-Z])(?=.*\d)(?=.*[@$])[A-Za-z\d@$]{8,12}$'
+        mobileno_pattern = r'^(?:\+63\d{10}|09\d{9})$'
+        email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+        
+        # Extract values from dictionary
+        username = data.get('username')
+        password = data.get('password')
+        phone_number = data.get('phone_number')
+        email = data.get('email')
+        
+        if not username or not password or not phone_number or not email:
+            self._validation_errors.append("Missing required fields in user data")
+            return False
+        
+        # Check for existing username
+        if username in existing_usernames:
+            self._validation_errors.append(f"Username '{username}' already exists")
+            return False
+
+        # Validate password format
+        if not re.match(password_pattern, password):
+            self._validation_errors.append(
+                "Password must be 8-12 characters long and contain at least "
+                "one uppercase letter, one number, and one special character (@$)"
+            )
+            return False
+
+        # Validate phone number format
+        if not re.match(mobileno_pattern, phone_number):
+            self._validation_errors.append(
+                "Phone number must be in format: +63XXXXXXXXXX or 09XXXXXXXXX"
+            )
+            return False
+
+        # Validate email format
+        if not re.match(email_pattern, email):
+            self._validation_errors.append("Invalid email format")
+            return False
+
+        logger.info(f"User data validated successfully: {username}")
+        return True
+    
+    def get_validation_errors(self) -> list:
+        """Returns the list of validation errors from the last validation attempt."""
+        return self._validation_errors
+
