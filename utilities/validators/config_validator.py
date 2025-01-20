@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 import json
 from pydantic import ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings
@@ -222,6 +222,14 @@ class AppConfig(BaseSettings):
     PORT: int = Field(
         default=8000,
         description="Server port"
+    )
+    RELOAD: bool = Field(
+        default=False,
+        description="Enable or disable hot reload"
+    )
+    RELOAD_EXCLUDES: List[str] = Field(
+        default=None,
+        description="Excluded files and/or directories from reload."
     )
     WORKERS: int = Field(
         default=1,

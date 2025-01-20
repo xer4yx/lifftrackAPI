@@ -1,5 +1,4 @@
 import threading
-
 from fastapi import (
     FastAPI, 
     Depends, 
@@ -10,11 +9,11 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
-
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
+import uvicorn
 
 from lifttrack import timedelta, threading, network_logger
 from lifttrack.utils.logging_config import log_network_io, setup_logger
@@ -32,6 +31,8 @@ from routers.UsersRouter import router as users_router
 from routers.ProgressRouter import router as progress_router
 from routers.WebsocketRouter import router as websocket_router
 from routers.v2.UsersRouter import router as v2_users_router
+
+from utilities.config import get_config
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -70,6 +71,7 @@ latest_frame = None
 # Configure logging for main.py
 logger = setup_logger("main", "lifttrack_main.log")
 system_logger = setup_logger("system", "server_resource.log")
+config = get_config()
 
 # Start resource monitoring
 start_resource_monitoring(system_logger, log_cpu_and_mem_usage, 60)
@@ -336,13 +338,12 @@ async def read_users_me(request: Request, current_user: User = Depends(get_curre
             response_status=response.status_code
         )
 
-
-# @app.get("/stream-tracking")
-# async def video_feed():  # Web version
-#     """
-#     Endpoint for the video feed.
-#     """
-#     return StreamingResponse(
-#         generate_frames(),
-#         media_type="multipart/x-mixed-replace; boundary=frame"
-#     )
+if __name__ == "__main__":
+    uvicorn.run(
+        app="main:app",
+        host=config.HOST,
+        port=config.PORT,
+        reload=config.RELOAD,
+        reload_excludes=config.RELOAD_EXCLUDES,
+        workers=config.WORKERS
+    )

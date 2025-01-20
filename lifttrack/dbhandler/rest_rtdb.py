@@ -15,7 +15,7 @@ from utilities.monitoring import MonitoringFactory
 logger = MonitoringFactory.get_logger("rest-rtdb")
 
 class RTDBHelper(DatabaseRepository):
-    def __init__(self, dsn=None, authentication=None, max_workers=5):
+    def __init__(self, dsn=None, authentication=None, max_workers=1):
         self.__dsn = config.get(section='Firebase', option='RTDB_DSN') or dsn
         self.__auth = config.get(section='Firebase', option='RTDB_AUTH') or authentication
         self.__pool = ThreadPoolExecutor(max_workers=max_workers)

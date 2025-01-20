@@ -31,3 +31,6 @@ def get_token_service() -> TokenService:
 
 def get_password_service() -> PasswordService:
     return PasswordService()
+
+def get_input_validator() -> InputValidator:
+    return InputValidator()

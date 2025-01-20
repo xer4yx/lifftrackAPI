@@ -2,7 +2,7 @@ from .auth_schema import LoginRequest, LoginResponse, LogoutResponse
 from .exercise_schema import Exercise, ExerciseDate, ExerciseData, Features, Object, ExerciseType
 from .response_schema import APIResponse, ErrorResponse, ErrorDetail
 from .token_schema import Token, TokenData
-from .user_schema import UserSchema, UserCreateSchema, UserUpdateSchema
+from .user_schema import UserSchema, UserCreateSchema, UserUpdateSchema, UserResponseSchema
 
 __all__ = [
     "LoginRequest",
@@ -21,5 +21,6 @@ __all__ = [
     "TokenData",
     "UserSchema",
     "UserCreateSchema",
-    "UserUpdateSchema"
+    "UserUpdateSchema",
+    "UserResponseSchema"
 ]

@@ -47,7 +47,7 @@ class UserDefaultBase(EntityDefaultBase):
     profile_picture: Optional[str] = None
     is_authenticated: Optional[bool] = False
     is_deleted: Optional[bool] = False
-    last_login: Optional[datetime] = None
+    last_login: Optional[str] = None
     
     def update_last_login(self) -> None:
         """Update last login timestamp"""

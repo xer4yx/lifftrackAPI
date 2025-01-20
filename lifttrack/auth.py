@@ -8,13 +8,13 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
+from infrastructure.database.factory import DatabaseFactory
 from lifttrack import config
-from lifttrack.dbhandler.rest_rtdb import rtdb
 from lifttrack.models import User, TokenData
 from lifttrack.utils.logging_config import setup_logger
 
 from core.interfaces import TokenService, PasswordService, InputValidator, DatabaseRepository
-
+from infrastructure import get_rest_firebase_db
 
 # Configure logging for auth.py
 logger = setup_logger("auth", "lifttrack_auth.log")
@@ -34,7 +34,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 existing_usernames = set()
 try:
-    users = rtdb.get_all_data()
+    db: DatabaseFactory = get_rest_firebase_db()
+    users = db.query(path="users", order_by="username")
     existing_usernames.update(username for username in users.keys())
     logger.info(f"Username cache initialized with {len(existing_usernames)} entries")
 except Exception as e:
@@ -116,7 +117,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(token: str = Depends(oauth2_scheme),
+                           db: DatabaseFactory = Depends(get_rest_firebase_db)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -128,7 +130,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    user_data = rtdb.get_data(username=token_data.username)
+    user_data = await db.get(path="users", key=token_data.username)
     if user_data is None:
         logger.warning(f"User not found for token: {username}")
         raise HTTPException(
@@ -160,12 +162,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         )
         
 
-async def check_password_update(user: User = Depends(lambda user: validate_input(user, is_update=True))):
+async def check_password_update(user: User = Depends(lambda user: validate_input(user, is_update=True)),
+                                db: DatabaseFactory = Depends(get_rest_firebase_db)):
     """
     Dependency to check if password is being updated in user data.
     Returns tuple of (user, is_password_update).
     """
-    existing_user_data = rtdb.get_data(user.username)
+    existing_user_data = await db.get(path="users", key=user.username)
     if not existing_user_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

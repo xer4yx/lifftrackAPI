@@ -49,4 +49,9 @@ class UserResponseSchema(UserSchema):
     """
     User response schema for the application.
     """
-    pass
+    id: str
+    created_at: str
+    updated_at: str
+    is_authenticated: Optional[bool] = False
+    is_deleted: Optional[bool] = False
+    last_login: Optional[str] = None

@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from core.interfaces.auth import TokenService, PasswordService
 from infrastructure.auth.jwt_service import JWTTokenService
 from infrastructure.auth.password_service import BcryptPasswordService
-from infrastructure.monitoring.logger import MonitoringService
+from utilities.monitoring.logger import MonitoringService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 

@@ -15,7 +15,12 @@ from lifttrack.utils.logging_config import setup_logger, log_network_io
 from core.services import UserService
 from core.exceptions import DatabaseError
 from infrastructure import get_rest_firebase_db
-from interfaces.api.schemas import UserCreateSchema, UserUpdateSchema
+from interfaces.api.schemas import (
+    APIResponse, 
+    UserCreateSchema, 
+    UserUpdateSchema, 
+    UserResponseSchema
+)
 from interfaces.api import (
     RESPONSE_201, 
     RESPONSE_200, 
@@ -55,7 +60,7 @@ user_service = UserService(
     input_validator=authentication_service
 )
 
-@router.put("/create", status_code=status.HTTP_201_CREATED)
+@router.put("/create", status_code=status.HTTP_201_CREATED, response_model=APIResponse[UserResponseSchema])
 @limiter.limit("5/minute")
 async def create_user(
     request: Request, 
