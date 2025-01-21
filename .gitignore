@@ -8,11 +8,8 @@ __pycache__/
 .env
 
 model/
-tests/res/
-tests/graph_img_test.py
-tests/sampleAPI.py
-tests/secretkey.py
 logs/
+metrics/
 
 *.jpg
 *.png

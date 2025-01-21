@@ -1,22 +1,15 @@
-from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Any, Optional
-import numpy as np
+from typing import Optional, Dict, Any, Protocol, runtime_checkable
 
-class ModelInference(ABC):
-    @abstractmethod
-    def get_inference(
-        self,
-        input_data: Any,
-        model: object
-    ) -> Dict[str, Any]:
-        """Get inference from specified model type
+@runtime_checkable
+class Inference(Protocol):
+    def get_inference(self) -> Optional[Dict[str, Any]]:
+        """Get inference from model
         
         Args:
             input_data: Input data to run inference on. Could be:
                 - Single frame (np.ndarray) for pose estimation
                 - Single frame (np.ndarray) for object detection  
                 - Multiple frames (np.ndarray) with features for exercise classification
-            model_type: Type of model to use ('pose', 'object', 'exercise')
             
         Returns:
             Dictionary containing inference results based on model type:

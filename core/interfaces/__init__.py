@@ -9,7 +9,7 @@ from .auth import TokenService, PasswordService, InputValidator
 from .database import DatabaseRepository
 from .monitoring import MetricsExporter
 from .exercise import ExerciseRepository
-from .vision import ModelInference
+from .vision import Inference
 from .repositories import FrameRepository
 
 __all__ = [
@@ -18,7 +18,7 @@ __all__ = [
     'InputValidator',
     'DatabaseRepository',
     'MetricsExporter',
-    'ModelInference',
+    'Inference',
     'FrameRepository',
     'ExerciseRepository'
 ]
