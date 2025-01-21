@@ -1,4 +1,5 @@
 import uuid
+from fastapi.params import Depends
 from pydantic import ValidationError
 
 from fastapi import APIRouter, Request, Response, status, Body
@@ -8,13 +9,12 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from lifttrack import network_logger
-from lifttrack.auth import LiftTrackAuthenticator
 from lifttrack.models import User
-from lifttrack.utils.logging_config import setup_logger, log_network_io
+from lifttrack.utils.logging_config import log_network_io
 
 from core.services import UserService
 from core.exceptions import DatabaseError
-from infrastructure import get_rest_firebase_db
+from infrastructure import user_service_rtdb
 from interfaces.api.schemas import (
     APIResponse, 
     UserCreateSchema, 
@@ -33,6 +33,7 @@ from interfaces.api import (
     RESPONSE_500, 
     RESPONSE_503
 )
+from utilities.monitoring.factory import MonitoringFactory
 
 router = APIRouter(
     prefix="/user",
@@ -50,21 +51,15 @@ router = APIRouter(
         503: RESPONSE_503
     }
 )
-
-logger = setup_logger("user_router", "router.log")
+logger = MonitoringFactory.get_logger("user-router")
 limiter = Limiter(key_func=get_remote_address)
-authentication_service = LiftTrackAuthenticator(get_rest_firebase_db())
-user_service = UserService(
-    database=get_rest_firebase_db(),
-    password_service=authentication_service, 
-    input_validator=authentication_service
-)
 
 @router.put("/create", status_code=status.HTTP_201_CREATED, response_model=APIResponse[UserResponseSchema])
 @limiter.limit("5/minute")
 async def create_user(
     request: Request, 
-    response: Response, 
+    response: Response,
+    service: UserService = Depends(user_service_rtdb),
     user: UserCreateSchema = Body(..., example={
                 "first_name": "John",
                 "last_name": "Doe",
@@ -83,7 +78,7 @@ async def create_user(
         request: FastAPI Request object.
     """
     try:
-        result = await user_service.create_user(
+        result = await service.create_user(
             username=user.username,
             email=user.email,
             password=user.password,
@@ -125,7 +120,7 @@ async def create_user(
 
 @router.get("/{username}", status_code=status.HTTP_200_OK)
 @limiter.limit("20/minute")
-async def get_user_data(request: Request, username: str, response: Response):
+async def get_user_data(request: Request, username: str, response: Response, service: UserService = Depends(user_service_rtdb)):
     """
     Endpoint to get user data from the Firebase Realtime Database.
 
@@ -135,7 +130,7 @@ async def get_user_data(request: Request, username: str, response: Response):
         request: FastAPI Request object.
     """
     try:
-        user_data = await user_service.get_user(username)
+        user_data = await service.get_user(username)
 
         if user_data is None:
             return JSONResponse(
@@ -167,6 +162,7 @@ async def update_user_data(
     username: str, 
     request: Request, 
     response: Response,
+    service: UserService = Depends(user_service_rtdb),
     user: UserUpdateSchema = Body(..., example={
         "first_name": "John",
         "last_name": "Doe",
@@ -187,7 +183,7 @@ async def update_user_data(
     """
     try:
         # Convert Pydantic model to entity and update
-        success = await user_service.update_user(
+        success = await service.update_user(
             username=username,
             user_data=user.to_entity()
         )
@@ -231,7 +227,7 @@ async def update_user_data(
 
 @router.put("/{username}/change-pass", status_code=status.HTTP_200_OK, deprecated=True)
 @limiter.limit("5/minute")
-async def change_password(username: str, user: User, request: Request, response: Response):
+async def change_password(username: str, user: User, request: Request, response: Response, service: UserService = Depends(user_service_rtdb)):
     """
     Endpoint to change user password.
 
@@ -241,18 +237,18 @@ async def change_password(username: str, user: User, request: Request, response:
         request: FastAPI Request object.
     """
     try:
-        hashed_pass = await user_service.get_user_password(username)
+        hashed_pass = await service.get_user_password(username)
         current_password = user.password  # Store current password
         
-        if not hashed_pass or not await user_service.verify_password(current_password, hashed_pass):
+        if not hashed_pass or not await service.verify_password(current_password, hashed_pass):
             return JSONResponse(
                 content={"msg": "Incorrect password."},
                 status_code=status.HTTP_400_BAD_REQUEST
             )
 
         # Update user with new password
-        user.password = await user_service.hash_password(user.password)  # Use password field for new password
-        success = await user_service.update_user(username, user)
+        user.password = await service.hash_password(user.password)  # Use password field for new password
+        success = await service.update_user(username, user)
         
         if not success:
             return JSONResponse(
@@ -289,7 +285,7 @@ async def change_password(username: str, user: User, request: Request, response:
 
 @router.delete("/{username}", status_code=status.HTTP_200_OK)
 @limiter.limit("5/minute")
-async def delete_user(username: str, request: Request, response: Response):
+async def delete_user(username: str, request: Request, response: Response, service: UserService = Depends(user_service_rtdb)):
     """
     Endpoint to delete a user from the Firebase Realtime Database.
 
@@ -300,7 +296,7 @@ async def delete_user(username: str, request: Request, response: Response):
     try:
         # deleted = rtdb.delete_data(username)
         
-        success = await user_service.delete_user(username)
+        success = await service.delete_user(username)
         
         if not success:
             raise DatabaseError("User deletion failed.")

@@ -8,9 +8,9 @@ Infrastructure Layer
 """
 from typing import Annotated
 from .database import DatabaseFactory
+from .auth import get_password_service, get_data_validator
 from core.interfaces import DatabaseRepository
 from core.services import get_user_service, UserService
-from .auth import get_password_service, get_data_validator
 from utilities.config import get_database_settings
 
 db_settings = get_database_settings()
@@ -32,9 +32,25 @@ def get_rest_firebase_db() -> DatabaseRepository:
     )
     return rest_db
 
-user_service_dependency: UserService = Annotated[
+# Import auth services after database functions are defined
+
+user_service_rtdb: UserService = Annotated[
     get_user_service, 
     get_rest_firebase_db, 
     get_password_service, 
     get_data_validator
+]
+
+user_service_admin: UserService = Annotated[
+    get_user_service, 
+    get_admin_firebase_db, 
+    get_password_service, 
+    get_data_validator
+]
+
+__all__ = [
+    "get_admin_firebase_db",
+    "get_rest_firebase_db",
+    "user_service_rtdb",
+    "user_service_admin"
 ]

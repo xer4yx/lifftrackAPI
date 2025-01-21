@@ -228,7 +228,7 @@ class AppConfig(BaseSettings):
         description="Enable or disable hot reload"
     )
     RELOAD_EXCLUDES: List[str] = Field(
-        default=None,
+        default_factory=list,
         description="Excluded files and/or directories from reload."
     )
     WORKERS: int = Field(

@@ -2,9 +2,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
-from routers.UsersRouter import router, user_service
+from infrastructure import user_service_rtdb
+from routers.UsersRouter import router
 
-
+# Create test app
 app = FastAPI()
 app.include_router(router)
 client = TestClient(app)
@@ -24,10 +25,10 @@ def mock_user_service():
     return service
 
 @pytest.fixture(autouse=True)
-def patch_auth_service(mock_user_service):
-    """Patch both user service and auth functions"""
-    with patch('routers.UsersRouter.user_service', mock_user_service):
-        yield mock_user_service
+def patch_dependencies(mock_user_service):
+    """Override the FastAPI dependency"""
+    app.dependency_overrides[user_service_rtdb] = lambda: mock_user_service
+    yield mock_user_service
 
 @pytest.fixture
 def valid_user_data():
@@ -222,3 +223,7 @@ async def test_change_password_incorrect_password(mock_user_service, valid_user_
     assert response.status_code == 400
     assert response.json() == {"msg": "Incorrect password."}
     mock_user_service.update_user.assert_not_called()
+    
+def teardown():
+    """Restore the original dependency"""
+    app.dependency_overrides.clear()

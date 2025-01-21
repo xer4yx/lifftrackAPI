@@ -1,16 +1,25 @@
 from typing import Any, Dict, Annotated
 import re
 from core.interfaces import InputValidator, DatabaseRepository
-from infrastructure import get_admin_firebase_db
+from infrastructure.database.factory import DatabaseFactory
 from utilities.monitoring import MonitoringFactory
+from utilities.config import get_database_settings
 
 class DataValidator(InputValidator):
-    def __init__(self, db: DatabaseRepository = Annotated[DatabaseRepository, get_admin_firebase_db]):
+    def __init__(self, db: DatabaseRepository = None):
         self.logger = MonitoringFactory.get_logger(
             module_name="input-validator",
             log_dir="logs/infrastructure/auth"
         )
         self._validation_errors = []
+        if db is None:
+            db_settings = get_database_settings()
+            db = DatabaseFactory.create_repository(
+                type="admin",
+                credentials_path=db_settings.get("FIREBASE_CREDENTIALS_PATH"),
+                auth_token=db_settings.get("FIREBASE_AUTH_TOKEN"),
+                options=db_settings.get("FIREBASE_OPTIONS")
+            )
         users = db.query(path="users", order_by="username")
         self._existing_usernames = set(user.get('username') for user in users if user.get('username'))
     

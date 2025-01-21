@@ -13,7 +13,7 @@ from lifttrack.utils.logging_config import log_network_io
 
 from core.services import UserService
 from infrastructure.database import DatabaseFactory
-from infrastructure import get_admin_firebase_db
+from infrastructure import user_service_admin
 from interfaces.api.schemas import UserCreateSchema, UserUpdateSchema
 from interfaces.api import (
     RESPONSE_201, 
@@ -49,21 +49,12 @@ router = APIRouter(
 )
 limiter = Limiter(key_func=get_remote_address)
 
-# Instead, create a dependency function
-def get_user_service(db: DatabaseFactory = Depends(get_admin_firebase_db)):
-    auth_service = LiftTrackAuthenticator(database=db)
-    return UserService(
-        database=db,
-        password_service=auth_service,
-        input_validator=auth_service
-    )
-
 @router.post("/users", response_model=User, status_code=201)
 @limiter.limit("5/minute")
 async def create_user(
     request: Request, 
     response: Response,
-    user_service: UserService = Depends(get_user_service),
+    user_service: UserService = Depends(user_service_admin),
     user: UserCreateSchema = Body(..., example={
         "first_name": "John",
         "last_name": "Doe",
@@ -131,7 +122,7 @@ async def get_users(
     request: Request, 
     response: Response,
     username: str,
-    user_service: UserService = Depends(get_user_service)
+    user_service: UserService = Depends(user_service_admin)
 ):
     """
     Retrieve users with optional age filtering.
@@ -178,7 +169,7 @@ async def update_user(
     response: Response,
     username: str, 
     update_data: UserUpdateSchema,
-    user_service: UserService = Depends(get_user_service)
+    user_service: UserService = Depends(user_service_admin)
 ):
     """
     Update an existing user's information.
@@ -262,7 +253,7 @@ async def delete_user(
     request: Request, 
     response: Response, 
     username: str,
-    user_service: UserService = Depends(get_user_service)
+    user_service: UserService = Depends(user_service_admin)
 ):
     """
     Delete a user from the database.
