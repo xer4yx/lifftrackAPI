@@ -199,10 +199,16 @@ class RTDBHelper:
             progress_data = Progress(**snapshot)
             
             if exercise_name:
-                if exercise_name in progress_data.exercise:
-                    return {"username": username, "exercise": {
-                        exercise_name: progress_data.exercise[exercise_name]
-                    }}
+                # Check if the exercise exists in the user's data
+                if (progress_data.data.get(username) and 
+                    progress_data.data[username].get(exercise_name)):
+                    return {
+                        "data": {
+                            username: {
+                                exercise_name: progress_data.data[username][exercise_name]
+                            }
+                        }
+                    }
                 return None
             
             logger.info(f"Progress data retrieved for user: {username}")
