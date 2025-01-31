@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Optional, Union, Dict, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class User(BaseModel):
@@ -50,8 +50,11 @@ class Object(BaseModel):
     width: float
     height: float
     confidence: float
-    type: str = Field(alias="class")
-    classs_id: Optional[int] = None
+    type: str = Field(alias="class", validation_alias="class", populate_by_name=True)
+    classs_id: Optional[int] = Field(None, alias="class_id")
+
+    class Config:
+        populate_by_name = True
 
 
 class Features(BaseModel):
@@ -88,6 +91,21 @@ class Exercise(BaseModel):
 
 
 class Progress(BaseModel):
-    username: str
-    exercise: Exercise
+    """
+    Model for storing user progress data
+    """
+    data: Dict[str, Dict[str, Dict[str, ExerciseData]]] = Field(default_factory=dict)
+
+    @model_validator(mode='before')
+    @classmethod
+    def transform_data(cls, values):
+        # If the input is already in the correct format, return as is
+        if "data" in values:
+            return values
+            
+        # Otherwise, wrap the input data in the expected structure
+        return {"data": values}
+
+    class Config:
+        extra = "allow"  # Allow extra fields in the data 
     

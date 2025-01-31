@@ -24,7 +24,7 @@ def get_db():
     try:
         # Initialize Firebase with credentials path
         db = FirebaseDBHelper(
-            credentials_path=getenv('GOOGLE_SERVICES_JSON'),
+            credentials_path=config.get(section='Firebase', option='GOOGLE_SERVICES_JSON'),
             options=options
         )
         return db

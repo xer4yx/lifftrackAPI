@@ -60,9 +60,17 @@ class ObjectTracker:
             if not roboflow_results or not isinstance(roboflow_results, dict):
                 return []  # Return empty dict for invalid results
             
-            predictions = [Object(**pred).model_dump() for pred in roboflow_results]
+            predictions = [
+                Object(
+                    x=pred.get('x', 0),
+                    y=pred.get('y', 0),
+                    width=pred.get('width', 0),
+                    height=pred.get('height', 0),
+                    confidence=pred.get('confidence', 0),
+                    classs_id=pred.get('class_id', 0),
+                    **{'class': pred.get('class', '')}
+                    ).model_dump() for pred in roboflow_results['predictions']]
             return predictions
-            return roboflow_results
             
         except Exception as e:
             comvis_logger.error(f"Error during object detection: {e}")

@@ -1,7 +1,9 @@
 from typing import Optional
+import uuid
 from pydantic import ValidationError
 
-from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi import APIRouter, Request, Response, Depends, HTTPException, status
+from fastapi.params import Body
 from fastapi.responses import JSONResponse
 
 from slowapi import Limiter
@@ -32,8 +34,17 @@ limiter = Limiter(key_func=get_remote_address)
 @router.put("/create")
 @limiter.limit("5/minute")
 async def create_user(
-    request: Request, 
-    user: User = Depends(lambda user: validate_input(user, is_update=False))
+    request: Request,
+    response: Response, 
+    user: User = Body(..., example={
+                "first_name": "John",
+                "last_name": "Doe",
+                "username": "johndoe",
+                "email": "john.doe@example.com",
+                "phone_number": "09123456789",
+                "password": str(uuid.uuid4().hex)
+            }
+        )
     ):
     """
     Endpoint to create a new user in the Firebase Realtime Database.
@@ -43,58 +54,46 @@ async def create_user(
         request: FastAPI Request object.
     """
     try:
-        response = None
-        user_data = {
-            "id": user.id,
-            "fname": user.fname,
-            "lname": user.lname,
-            "username": user.username,
-            "phoneNum": user.phoneNum,
-            "email": user.email,
-            "password": get_password_hash(user.password),
-            "pfp": user.pfp,
-            "isAuthenticated": user.isAuthenticated,
-            "isDeleted": user.isDeleted
-        }
+        user.password = get_password_hash(user.password)
+        # user = validate_input(user)
 
         # Attempt to add the user to the database
-        rtdb.put_data(user_data)
+        rtdb.put_data(user_data=user.model_dump())
         add_to_username_cache(user.username)
 
-        reponse = JSONResponse(
+        return JSONResponse(
             content={"msg": "User created."},
             status_code=status.HTTP_201_CREATED
         )
-        return response
     except ValidationError as vale:
         # Handle errors raised by Pydantic
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": str(vale)},
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
         )
-        return response
+        
     except ValueError as ve:
         # Handle errors raised by RTDBHelper
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": str(ve)},
             status_code=status.HTTP_400_BAD_REQUEST
         )
-        return reponse
+        
     except HTTPException as httpe:
         # Handle FastAPI-specific HTTP exceptions
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
+        
     except Exception as e:
         # Handle unexpected exceptions
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
         logger.exception(f"Error in create_user: {e}")
-        return response
+        
     finally:
         log_network_io(
             logger=network_logger, 
@@ -106,7 +105,11 @@ async def create_user(
 
 @router.get("/{username}")
 @limiter.limit("20/minute")
-async def get_user_data(request: Request, username: str, data: Optional[str] = None):
+async def get_user_data(
+    request: Request, 
+    response: Response,
+    username: str, 
+    data: Optional[str] = None):
     """
     Endpoint to get user data from the Firebase Realtime Database.
 
@@ -116,7 +119,6 @@ async def get_user_data(request: Request, username: str, data: Optional[str] = N
         request: FastAPI Request object.
     """
     try:
-        response = None
         user_data = rtdb.get_data(username, data)
 
         if user_data is None:
@@ -125,25 +127,25 @@ async def get_user_data(request: Request, username: str, data: Optional[str] = N
                 detail="User not found."
             )
 
-        response = JSONResponse(
+        return JSONResponse(
             content=user_data,
             status_code=status.HTTP_200_OK
         )
-        return response
+        
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
+        
     except Exception as e:
         # Handle unexpected exceptions
-        response = JSONResponse(
+        logger.exception(f"Error in get_user_data: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in get_user_data: {e}")
-        return response
+        
     finally:
         log_network_io(
             logger=network_logger, 
@@ -157,6 +159,7 @@ async def get_user_data(request: Request, username: str, data: Optional[str] = N
 async def update_user_data(
     username: str, 
     request: Request,
+    response: Response,
     update_data: tuple[User, bool] = Depends(check_password_update)
     ):
     """
@@ -168,7 +171,6 @@ async def update_user_data(
         request: FastAPI Request object.
     """
     try:
-        response = None
         user, is_password_update = update_data
         
         if is_password_update:
@@ -182,25 +184,25 @@ async def update_user_data(
                 detail="User update failed."
             )
 
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": "User updated."},
             status_code=status.HTTP_200_OK
         )
-        return response
+        
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
+        
     except Exception as e:
         # Handle unexpected exceptions
-        response = JSONResponse(
+        logger.exception(f"Error in update_user_data: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in update_user_data: {e}")
-        return response
+        
     finally:
         log_network_io(
             logger=network_logger, 
@@ -213,7 +215,7 @@ async def update_user_data(
 
 @router.put("/user/{username}/change-pass")
 @limiter.limit("5/minute")
-async def change_password(username: str, user: User, request: Request):
+async def change_password(username: str, user: User, request: Request, response: Response):
     """
     Endpoint to change user password.
 
@@ -223,7 +225,6 @@ async def change_password(username: str, user: User, request: Request):
         request: FastAPI Request object.
     """
     try:
-        response = None
         hashed_pass = rtdb.get_data(user.username, "password")
 
         if not hashed_pass or not verify_password(user.password, hashed_pass):
@@ -252,25 +253,25 @@ async def change_password(username: str, user: User, request: Request):
                 detail="Password change failed."
             )
 
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": "Password changed."},
             status_code=status.HTTP_200_OK
         )
-        return response
+        
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
+        
     except Exception as e:
         # Handle unexpected exceptions
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
         logger.exception(f"Error in change_password: {e}")
-        return response
+        
     finally:
         log_network_io(
             logger=network_logger, 
@@ -282,7 +283,7 @@ async def change_password(username: str, user: User, request: Request):
 
 @router.delete("/user/{username}")
 @limiter.limit("5/minute")
-async def delete_user(username: str, request: Request):
+async def delete_user(username: str, request: Request, response: Response):
     """
     Endpoint to delete a user from the Firebase Realtime Database.
 
@@ -291,7 +292,6 @@ async def delete_user(username: str, request: Request):
         request: FastAPI Request object.
     """
     try:
-        response = None
         deleted = rtdb.delete_data(username)
         if not deleted:
             raise HTTPException(
@@ -301,25 +301,25 @@ async def delete_user(username: str, request: Request):
             
         remove_from_username_cache(username)
 
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": "User deleted."},
             status_code=status.HTTP_200_OK
         )
-        return response
+        
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
+        
     except Exception as e:
         # Handle unexpected exceptions
-        response = JSONResponse(
+        logger.exception(f"Error in delete_user: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in delete_user: {e}")
-        return response
+        
     finally:
         log_network_io(
             logger=network_logger, 

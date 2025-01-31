@@ -253,7 +253,7 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
 
 @app.post("/logout")
 @limiter.limit("10/minute")
-async def logout(request: Request, current_user: User = Depends(get_current_user)):
+async def logout(request: Request):
     """
     Endpoint to logout user and invalidate their token.
     """

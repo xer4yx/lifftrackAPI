@@ -181,15 +181,31 @@ async def websocket_endpoint(
                         # Use only recent frames for movement classification
                         predicted_class_name = three_dim_inference.predict_class(frames_buffer)
                         
-                        object_predictions = object_inference.get('predictions', [])
                         
-                        if not object_predictions:
-                            logger.warning(f"Object detection failed. Only contains: {object_predictions}")
-                            object_predictions = {}
+                        if not object_inference:
+                            logger.warning("Object detection failed. Using default unknown object")
+                            object_predictions = Object(
+                                classs_id=-1,
+                                type="unknown",
+                                confidence=0.0,
+                                x=0.0,
+                                y=0.0,
+                                width=0.0,
+                                height=0.0
+                            )
                         else:
-                            # Sort predictions by confidence and get the highest confidence prediction
-                            object_predictions = max(object_predictions, key=lambda x: x.get('confidence', 0))
-                            logger.info(f"Selected prediction with confidence: {object_predictions.get('confidence')}")
+                            best_pred = max(object_inference, 
+                                         key=lambda x: x.get('confidence', 0))
+                            
+                            object_predictions = Object(
+                                classs_id=best_pred.get('class_id', -1),
+                                type=best_pred.get('class', 'unknown'),
+                                confidence=best_pred.get('confidence', 0.0),
+                                x=best_pred.get('x', 0.0),
+                                y=best_pred.get('y', 0.0),
+                                width=best_pred.get('width', 0.0),
+                                height=best_pred.get('height', 0.0)
+                            )
 
                         # Create features dict more efficiently
                         features = {
@@ -204,15 +220,7 @@ async def websocket_endpoint(
                         _, suggestions = calculate_form_accuracy(features, predicted_class_name)
                         
                         # Create Object model with proper field mapping
-                        object_base_model = Object(
-                            x=object_predictions.get('x', 0),
-                            y=object_predictions.get('y', 0),
-                            width=object_predictions.get('width', 0),
-                            height=object_predictions.get('height', 0),
-                            confidence=object_predictions.get('confidence', 0),
-                            classs_id=object_predictions.get('class_id', 0),
-                            **{'class': object_predictions.get('class', '')}  # Use unpacking for the 'class' field
-                        )
+                        object_base_model = object_predictions.copy()
 
                         # Create Features object with empty objects if detection failed
                         features_base_model = Features(
@@ -269,11 +277,16 @@ async def websocket_endpoint(
                         logger.error(f"Error during analysis: {str(e)}")
                         continue
 
-                # Send frame response immediately without waiting for analysis
-                await websocket.send_json({
-                    'frame': base64.b64encode(buffer).decode('utf-8'),
-                    'type': 'frame'
-                })
+                # Only send frame if connection is still active
+                if not websocket.client_state.DISCONNECTED:
+                    try:
+                        await websocket.send_json({
+                            'frame': base64.b64encode(buffer).decode('utf-8'),
+                            'type': 'frame'
+                        })
+                    except RuntimeError as e:
+                        logger.warning(f"Connection closed during send: {str(e)}")
+                        break
 
             except WebSocketDisconnect:
                 logger.info(f"Client disconnected after processing {frame_count} frames")
@@ -286,14 +299,17 @@ async def websocket_endpoint(
 
         # Session completion
         if not websocket.client_state.DISCONNECTED:
-            frames_buffer.clear()  # Clear buffer before closing
-            await websocket.send_json({
-                'type': 'complete',
-                'message': 'Session ended successfully',
-                'frame_count': frame_count,
-                'reason': 'max_frames_reached' if frame_count >= max_frames else 'timeout'
-            })
-            await websocket.close()
+            frames_buffer.clear()
+            try:
+                await websocket.send_json({
+                    'type': 'complete',
+                    'message': 'Session ended successfully',
+                    'frame_count': frame_count,
+                    'reason': 'max_frames_reached' if frame_count >= max_frames else 'timeout'
+                })
+                await websocket.close()
+            except RuntimeError as e:
+                logger.warning("Connection already closed during completion")
 
     except WebSocketDisconnect:
         logger.info(f"Client disconnected after processing {frame_count} frames")
