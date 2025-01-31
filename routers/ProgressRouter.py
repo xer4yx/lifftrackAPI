@@ -1,5 +1,5 @@
 from pydantic import ValidationError
-from typing import Optional
+from typing import Optional, Annotated
 
 from lifttrack import network_logger
 from lifttrack.models import User, ExerciseData
@@ -7,7 +7,7 @@ from lifttrack.auth import get_current_user
 from lifttrack.dbhandler.rest_rtdb import rtdb
 from lifttrack.utils.logging_config import setup_logger, log_network_io
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
 from fastapi.responses import JSONResponse
 
 from slowapi import Limiter
@@ -85,7 +85,7 @@ async def create_progress(
 async def get_progress(
     username: str,
     request: Request,
-    exercise: Optional[str] = None,
+    exercise: Annotated[Optional[str], Query(description="Exercise name")] = None,
     current_user: User = Depends(get_current_user)
 ):
     """

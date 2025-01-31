@@ -145,36 +145,6 @@ class RTDBHelper:
             raise
 
     @_with_connection
-    def put_progress(self, db, username: str, exercise: Exercise):
-        """
-        Adds exercise progress data for a user. New data is appended under the date,
-        not updated.
-        
-        Args:
-            username: Username of the user
-            exercise_name: Name of the exercise
-            exercise_data: ExerciseData object containing the progress data
-        """
-        try:
-            # Save to database
-            future = self.__pool.submit(
-                db.put,
-                url=f'/progress',
-                name=username,
-                data=exercise.model_dump()
-            )
-            snapshot = future.result()
-            
-            if snapshot is None:
-                logger.error(f"Failed to save progress for user: {username}")
-                raise ValueError('Progress not saved')
-            logger.info(f"Progress saved successfully for user: {username}")
-            
-        except Exception as e:
-            logger.exception(f"Exception in put_progress for user {username}: {e}")
-            raise
-
-    @_with_connection
     def get_progress(self, db, username: str, exercise_name: Optional[str] = None) -> Optional[Dict]:
         """
         Retrieves progress data from the database.
@@ -195,27 +165,64 @@ class RTDBHelper:
                 logger.warning(f"Progress data not found for user: {username}")
                 return None
             
-            # Validate against Progress model
-            progress_data = Progress(**snapshot)
-            
+            # For exercise-specific query
             if exercise_name:
-                # Check if the exercise exists in the user's data
-                if (progress_data.data.get(username) and 
-                    progress_data.data[username].get(exercise_name)):
+                if snapshot and exercise_name in snapshot:
                     return {
                         "data": {
                             username: {
-                                exercise_name: progress_data.data[username][exercise_name]
+                                exercise_name: snapshot[exercise_name]
                             }
                         }
                     }
                 return None
             
+            # Return all exercises
             logger.info(f"Progress data retrieved for user: {username}")
-            return progress_data.model_dump()
+            return {"data": {username: snapshot}}
             
         except Exception as e:
             logger.exception(f"Exception in get_progress for user {username}: {e}")
+            raise
+
+    @_with_connection
+    def put_progress(self, db, username: str, exercise_name: str, exercise_data: ExerciseData):
+        """
+        Adds exercise progress data for a user. New data is appended under the date,
+        not updated.
+        
+        Args:
+            username: Username of the user
+            exercise_name: Name of the exercise
+            exercise_data: ExerciseData object containing the progress data
+        """
+        try:
+            # Get existing data for the user
+            existing_data = db.get(url=f'/progress/{username}', name=None) or {}
+            
+            # Add new data
+            if not isinstance(existing_data, dict):
+                existing_data = {}
+            
+            if exercise_name not in existing_data:
+                existing_data[exercise_name] = {}
+                
+            # Save to database
+            future = self.__pool.submit(
+                db.put,
+                url='/progress',
+                name=username,
+                data=existing_data
+            )
+            snapshot = future.result()
+            
+            if snapshot is None:
+                logger.error(f"Failed to save progress for user {username}, exercise: {exercise_name}")
+                raise ValueError('Progress not saved')
+            logger.info(f"Progress saved successfully for user {username}, exercise: {exercise_name}")
+            
+        except Exception as e:
+            logger.exception(f"Exception in put_progress for user {username}, exercise {exercise_name}: {e}")
             raise
 
     @_with_connection
