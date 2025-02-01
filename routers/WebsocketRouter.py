@@ -93,11 +93,13 @@ async def websocket_endpoint(
     exercise_name: str = Query(..., description="Name of the exercise being performed"),
     db: FirebaseDBHelper = Depends(get_db)
     ):
-    await websocket.accept()
-    
-    frames_buffer = []  # Initialize buffer
-    
+    connection_active = False
     try:
+        await websocket.accept()
+        connection_active = True
+        
+        frames_buffer = []  # Initialize buffer
+        
         if not username or not exercise_name:
             raise ValueError("Both username and exercise_name are required")
             
@@ -105,7 +107,8 @@ async def websocket_endpoint(
     except Exception as e:
         logger.error(f"Failed to get initialization data: {str(e)}")
         frames_buffer.clear()
-        await websocket.close()
+        if connection_active:
+            await websocket.close()
         return
 
     frame_count = 0
@@ -120,8 +123,14 @@ async def websocket_endpoint(
     analysis_interval = 1.0  # Perform analysis every 1 second instead of every 30 frames
     
     try:
-        while frame_count < max_frames:
+        while frame_count < max_frames and connection_active:
             try:
+                # Check if connection is still active before processing
+                if not websocket.client:  # Check if client is None, which means disconnected
+                    logger.info("WebSocket disconnected, stopping frame processing")
+                    connection_active = False
+                    break
+
                 # Check for timeout
                 current_time = asyncio.get_event_loop().time()
                 if current_time - last_frame_time > frame_timeout:
@@ -152,12 +161,13 @@ async def websocket_endpoint(
                 np_arr = np.frombuffer(data, np.uint8)
                 frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
                 if frame is None or frame.size == 0:
+                    logger.warning("Failed to decode frame")
                     continue
 
                 # Resize frame before processing to reduce memory usage
                 frame = cv2.resize(frame, (192, 192))  # Adjust resolution as needed
                 
-                # Use more efficient encoding parameters
+                # Encode frame to JPEG before sending back
                 _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 
                 # Add frame to buffer with size limit
@@ -166,14 +176,16 @@ async def websocket_endpoint(
                     frames_buffer.pop(0)  # Remove oldest frame
                 frame_count += 1
                 
-                if len(frames_buffer) == previous_frame:
-                    _, prev_keypoints = movenet_inference.analyze_frame(frames_buffer[-1])
-
                 # Process analysis based on time interval instead of frame count
                 if current_time - last_analysis_time >= analysis_interval and len(frames_buffer) >= frame_buffer_size:
                     try:
-                        # Process latest frame only for MoveNet
+                        # Process latest frame for MoveNet
                         _, curr_keypoints = movenet_inference.analyze_frame(frames_buffer[-1])
+                        
+                        if frame_count > 1:  # Only get previous keypoints if we have more than one frame
+                            _, prev_keypoints = movenet_inference.analyze_frame(frames_buffer[-2])
+                        else:
+                            prev_keypoints = curr_keypoints  # Use current keypoints as previous for first frame
                         
                         # Process latest frame for object detection
                         object_inference = object_tracker.process_frames_and_get_annotations(frames_buffer[-1])
@@ -278,7 +290,7 @@ async def websocket_endpoint(
                         continue
 
                 # Only send frame if connection is still active
-                if not websocket.client_state.DISCONNECTED:
+                if connection_active and not websocket.client_state.DISCONNECTED:
                     try:
                         await websocket.send_json({
                             'frame': base64.b64encode(buffer).decode('utf-8'),
@@ -286,19 +298,28 @@ async def websocket_endpoint(
                         })
                     except RuntimeError as e:
                         logger.warning(f"Connection closed during send: {str(e)}")
+                        connection_active = False
+                        break
+                    except WebSocketDisconnect:
+                        logger.warning("WebSocket disconnected while sending frame")
+                        connection_active = False
                         break
 
             except WebSocketDisconnect:
                 logger.info(f"Client disconnected after processing {frame_count} frames")
-                frames_buffer.clear()  # Clear buffer on disconnect
+                connection_active = False
+                frames_buffer.clear()
                 break
             except Exception as e:
                 logger.error(f"Error in frame processing: {str(e)}")
-                frames_buffer.clear()  # Clear buffer on error
-                continue
+                frames_buffer.clear()
+                if not isinstance(e, WebSocketDisconnect):  # Only continue if it's not a disconnect
+                    continue
+                connection_active = False
+                break
 
-        # Session completion
-        if not websocket.client_state.DISCONNECTED:
+        # Session completion - only try to send if connection is still active
+        if connection_active and not websocket.client_state.DISCONNECTED:
             frames_buffer.clear()
             try:
                 await websocket.send_json({
@@ -308,8 +329,8 @@ async def websocket_endpoint(
                     'reason': 'max_frames_reached' if frame_count >= max_frames else 'timeout'
                 })
                 await websocket.close()
-            except RuntimeError as e:
-                logger.warning("Connection already closed during completion")
+            except (RuntimeError, WebSocketDisconnect) as e:
+                logger.warning(f"Connection already closed during completion: {str(e)}")
 
     except WebSocketDisconnect:
         logger.info(f"Client disconnected after processing {frame_count} frames")
