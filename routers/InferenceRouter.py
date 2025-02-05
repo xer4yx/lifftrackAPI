@@ -10,7 +10,11 @@ from datetime import datetime
 from lifttrack.v2.dbhelper import get_db
 from lifttrack.v2.dbhelper.admin_rtdb import FirebaseDBHelper
 from lifttrack.utils.logging_config import setup_logger
-from inference import movenet_inference, object_tracker, three_dim_inference
+from lifttrack.v2.comvis import (
+    movenet_inference, 
+    object_tracker, 
+    three_dim_inference
+)
 from lifttrack.v2.comvis.features import (
     extract_joint_angles, 
     extract_movement_patterns, 
