@@ -1,0 +1,30 @@
+version: '3.8'  # Add version if not present
+services:
+  roboflow:
+    container_name: roboflow-container  # valid name
+    image: roboflow/roboflow-inference-server-cpu:latest
+    ports:
+      - "9001:9001"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  fastapi:
+    container_name: fastapi-container  # valid name
+    build: .
+    image: twenty2020/lifttrack:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      roboflow:
+        condition: service_healthy
+    environment:
+      ROBOSERVER_HOST: "roboflow"
+      ROBOSERVER_PORT: "9001"
+    volumes:
+      - "/home/amboygaudia/lifftrackAPI:/lifftrackAPI"
+      - "/home/amboygaudia/lifftrackAPI/models:/lifftrackAPI/models"
+      - "/var/run/docker.sock:/var/run/docker.sock"

@@ -18,8 +18,9 @@ logs/
 *.png
 *.json
 
-Dockerfile
-requirements.txt
+!Dockerfile
+!requirements.txt 
+!docker-compose.yml
 
 !logo.jpg
 

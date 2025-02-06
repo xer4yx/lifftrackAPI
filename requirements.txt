@@ -22,3 +22,5 @@ websocket-client==1.7.0
 websockets==13.0.1
 inference
 uvicorn
+firebase-admin
+python-multipart
