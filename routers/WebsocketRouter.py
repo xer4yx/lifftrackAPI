@@ -2,29 +2,16 @@ import asyncio
 import base64
 import cv2
 import numpy as np
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
+from fastapi import APIRouter, WebSocket, Query, Depends, status
+from fastapi.websockets import WebSocketState, WebSocketDisconnect
 
 from lifttrack.utils.logging_config import setup_logger
 from lifttrack.comvis import websocket_process_frames
-from lifttrack.v2.comvis import (
-    movenet_inference, 
-    object_tracker, 
-    three_dim_inference
-)
-from lifttrack.v2.comvis.features import (
-    extract_joint_angles, 
-    extract_movement_patterns, 
-    calculate_speed, 
-    extract_body_alignment, 
-    calculate_stability
-)
-from lifttrack.v2.comvis.progress import calculate_form_accuracy
 from lifttrack.v2.comvis.inference_handler import *
 from lifttrack.v2.dbhelper import get_db
 from lifttrack.v2.dbhelper.admin_rtdb import FirebaseDBHelper
-
-from lifttrack.models import Exercise, ExerciseData, Features, Object
 from lifttrack.dbhandler.rest_rtdb import rtdb
+import ws_endpoint
 
 router = APIRouter()
 logger = setup_logger("websocket", "protocols.log")
@@ -94,37 +81,18 @@ async def websocket_endpoint(
     exercise_name: str = Query(..., description="Name of the exercise being performed"),
     db: FirebaseDBHelper = Depends(get_db)
     ):
-    connection_active = False
-    try:
-        await websocket.accept()
-        connection_active = True
+    await websocket.accept()
+    connection_active = True
         
-        frames_buffer = []  # Initialize buffer
-        
-        if not username or not exercise_name:
-            raise ValueError("Both username and exercise_name are required")
-            
-        logger.info(f"Starting tracking session for user: {username}, exercise: {exercise_name}")
-    except Exception as e:
-        logger.error(f"Failed to get initialization data: {str(e)}")
-        frames_buffer.clear()
-        if connection_active:
-            await websocket.close()
-        return
+    logger.info(f"Starting tracking session for user: {username}, exercise: {exercise_name}")
 
     frame_count = 0
-    max_frames = 1800
     last_frame_time = asyncio.get_event_loop().time()
-    frame_timeout = 60.0
-    
-    previous_frame = 29
-    frame_buffer_size = 30  # Only keep last 30 frames for analysis
     frames_buffer = []
     last_analysis_time = asyncio.get_event_loop().time()
-    analysis_interval = 1.0  # Perform analysis every 1 second instead of every 30 frames
     
     try:
-        while frame_count < max_frames and connection_active:
+        while frame_count < ws_endpoint.MAX_FRAMES and connection_active:
             try:
                 # Check if connection is still active before processing
                 if not websocket.client:  # Check if client is None, which means disconnected
@@ -134,7 +102,7 @@ async def websocket_endpoint(
 
                 # Check for timeout
                 current_time = asyncio.get_event_loop().time()
-                if current_time - last_frame_time > frame_timeout:
+                if current_time - last_frame_time > ws_endpoint.FRAME_TIMEOUT:
                     logger.info("Frame reception timeout - no frames received for 5 seconds")
                     frames_buffer.clear()  # Clear buffer on timeout
                     await websocket.send_json({
@@ -148,7 +116,7 @@ async def websocket_endpoint(
                 try:
                     data = await asyncio.wait_for(
                         websocket.receive_bytes(),
-                        timeout=frame_timeout
+                        timeout=ws_endpoint.FRAME_TIMEOUT
                     )
                     last_frame_time = asyncio.get_event_loop().time()
                 except asyncio.TimeoutError:
@@ -166,12 +134,12 @@ async def websocket_endpoint(
                 
                 # Add frame to buffer with size limit
                 frames_buffer.append(frame)
-                if len(frames_buffer) > frame_buffer_size:
+                if len(frames_buffer) > ws_endpoint.FRAME_BUFFER_SIZE:
                     frames_buffer.pop(0)  # Remove oldest frame
                 frame_count += 1
                 
                 # Process analysis based on time interval instead of frame count
-                if current_time - last_analysis_time >= analysis_interval and len(frames_buffer) >= frame_buffer_size:
+                if current_time - last_analysis_time >= ws_endpoint.ANALYSIS_INTERVAL and len(frames_buffer) >= ws_endpoint.FRAME_BUFFER_SIZE:
                     try:
                         curr_keypoints, prev_keypoints, object_inference, predicted_class_name = perform_frame_analysis(frames_buffer)
 
@@ -243,7 +211,7 @@ async def websocket_endpoint(
                     'type': 'complete',
                     'message': 'Session ended successfully',
                     'frame_count': frame_count,
-                    'reason': 'max_frames_reached' if frame_count >= max_frames else 'timeout'
+                    'reason': 'max_frames_reached' if frame_count >= ws_endpoint.MAX_FRAMES else 'timeout'
                 })
                 await websocket.close()
             except (RuntimeError, WebSocketDisconnect) as e:
@@ -255,7 +223,7 @@ async def websocket_endpoint(
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         frames_buffer.clear()  # Clear buffer on error
-        if not websocket.client_state.DISCONNECTED:
+        if websocket.client_state != WebSocketState.DISCONNECTED:
             await websocket.send_json({
                 'type': 'error',
                 'message': str(e),
@@ -264,5 +232,4 @@ async def websocket_endpoint(
             await websocket.close()
     finally:
         frames_buffer.clear()
-        await websocket.close()
         logger.info("WebSocket connection closed and buffer cleared")
