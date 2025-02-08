@@ -176,7 +176,7 @@ async def websocket_endpoint(
                         curr_keypoints, prev_keypoints, object_inference, predicted_class_name = perform_frame_analysis(frames_buffer)
 
                         object_predictions = load_to_object_model(object_inference)
-                        features = load_to_features_model(prev_keypoints, curr_keypoints, object_predictions)
+                        features = load_to_features_model(prev_keypoints, curr_keypoints, object_predictions, predicted_class_name)
 
                         suggestions = get_suggestions(features, predicted_class_name)
 
