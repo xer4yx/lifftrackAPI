@@ -50,8 +50,12 @@ class Object(BaseModel):
     width: float
     height: float
     confidence: float
-    type: str = Field(alias="class", validation_alias="class", populate_by_name=True)
-    classs_id: Optional[int] = Field(None, alias="class_id")
+    type: str = Field(
+        default="barbell", 
+        alias="class", 
+        validation_alias="class", 
+        populate_by_name=True)
+    classs_id: Optional[int] = Field(default=0, alias="class_id")
 
     class Config:
         populate_by_name = True
@@ -108,4 +112,17 @@ class Progress(BaseModel):
 
     class Config:
         extra = "allow"  # Allow extra fields in the data 
-    
+
+__all__ = [
+    "User",
+    "LoginForm",
+    "Token",
+    "TokenData",
+    "AppInfo",
+    "Frame",
+    "Object",
+    "Features",
+    "ExerciseData",
+    "Exercise",
+    "Progress"
+]

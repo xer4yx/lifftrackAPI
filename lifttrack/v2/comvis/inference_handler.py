@@ -63,11 +63,22 @@ def perform_frame_analysis(frames_buffer: Any):
 def load_to_object_model(object_inference: list) -> Object:
     """Load an object inference to an Object model."""
     try:
-        assert object_inference is not None
+        # Handle empty inference case
+        if not object_inference:
+            return Object(
+                classs_id=-1,
+                type="unknown",
+                confidence=0.0,
+                x=0.0,
+                y=0.0,
+                width=0.0,
+                height=0.0,
+            )
+            
         best_confidence = max(object_inference, key=lambda x: x.get('confidence', 0))
         return Object(
-            classs_id=best_confidence.get('class_id', -1),
-            type=best_confidence.get('class', "unknown"),
+            classs_id=best_confidence.get('class_id', 0),
+            type=best_confidence.get('class', 'barbell'),  # Provide default value
             confidence=best_confidence.get('confidence', 0.0),
             x=best_confidence.get('x', 0.0),
             y=best_confidence.get('y', 0.0),
@@ -77,7 +88,7 @@ def load_to_object_model(object_inference: list) -> Object:
     except Exception as e:
         logger.error(f"Failed to load object inference: {str(e)}")
         raise
-
+    
 def load_to_features_model(previous_pose, current_pose, object_inference, class_name):
     """Save features in a Features model"""
     try:
@@ -115,11 +126,10 @@ def get_suggestions(features: Features, class_name: str):
             logger.error("features must be a dictionary")
             raise TypeError("features must be a dictionary")
         _, suggestions = calculate_form_accuracy(_features, class_name)
-        return suggestions
+        # Join suggestions list into a single string, or return a default message if empty
+        return ". ".join(suggestions) if suggestions else "Form looks good! Keep it up!"
     except Exception as e:
         logger.error(f"Failed to get suggestions: {str(e)}")
-        raise
-
 
 def load_to_exercise_data_model(features: Features, suggestions: str, frame_index: str):
     """Save exercise data in an ExerciseData model"""
@@ -155,4 +165,3 @@ def save_progress(
     except Exception as e:
         logger.error(f"Failed to save progress: {str(e)}")
         raise
-    
