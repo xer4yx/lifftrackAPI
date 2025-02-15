@@ -1,192 +1,176 @@
-import logging
-from firebase import firebase
-from lifttrack import config
-from lifttrack.utils.logging_config import setup_logger
-from typing import Dict, Optional
-from lifttrack.models import Exercise, Progress, ExerciseData
-from concurrent.futures import ThreadPoolExecutor
+import aiohttp
+import asyncio
+from typing import Optional, Dict, Any
 from functools import wraps
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from lifttrack import config
 
-
-# Logging Configuration
-logger = setup_logger("rtdbHelper", "lifttrack_db.log") 
-
+logger = logging.getLogger(__name__)
 
 class RTDBHelper:
-    def __init__(self, dsn=None, authentication=None, max_workers=5):
+    def __init__(self, dsn=None, authentication=None, pool_size=10):
         self.__dsn = config.get(section='Firebase', option='RTDB_DSN') or dsn
         self.__auth = config.get(section='Firebase', option='RTDB_AUTH') or authentication
-        self.__pool = ThreadPoolExecutor(max_workers=max_workers)
-        self.__connections = {}
-        logger.info(f"RTDBHelper initialized with {max_workers} workers.")
+        self.__pool_size = pool_size
+        self.__session = None
+        self.__lock = asyncio.Lock()
+        logger.info(f"RTDBHelper initialized with pool size {pool_size}")
 
-    def _get_connection(self):
-        """Get or create a database connection for the current thread."""
-        import threading
-        thread_id = threading.get_ident()
-        
-        if thread_id not in self.__connections:
-            self.__connections[thread_id] = firebase.FirebaseApplication(
-                dsn=self.__dsn,
-                authentication=(lambda: None, lambda: self.__auth)[self.__auth != 'None']()
-            )
-            logger.debug(f"Created new connection for thread {thread_id}")
-        
-        return self.__connections[thread_id]
+    async def __aenter__(self):
+        await self.create_pool()
+        return self
 
-    def _with_connection(func):
-        """Decorator to handle database connections."""
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close_pool()
+
+    async def create_pool(self):
+        """Create the connection pool if it doesn't exist"""
+        if self.__session is None:
+            async with self.__lock:
+                if self.__session is None:
+                    conn = aiohttp.TCPConnector(limit=self.__pool_size)
+                    self.__session = aiohttp.ClientSession(connector=conn)
+                    logger.debug("Created new connection pool")
+
+    async def close_pool(self):
+        """Close the connection pool"""
+        if self.__session is not None:
+            async with self.__lock:
+                if self.__session is not None:
+                    await self.__session.close()
+                    self.__session = None
+                    logger.debug("Closed connection pool")
+
+    def _with_session(func):
+        """Decorator to handle session management"""
         @wraps(func)
-        def wrapper(self, *args, **kwargs):
-            db = self._get_connection()
+        async def wrapper(self, *args, **kwargs):
+            await self.create_pool()
             try:
-                return func(self, db, *args, **kwargs)
+                return await func(self, self.__session, *args, **kwargs)
             except Exception as e:
                 logger.exception(f"Database operation failed: {str(e)}")
                 raise
         return wrapper
 
-    @_with_connection
-    def put_data(self, db, user_data: dict[str, any]):
+    @_with_session
+    async def put_data(self, session: aiohttp.ClientSession, user_data: dict[str, Any]):
         """
         Adds a new user to the database via HTTP PUT request.
         """
         try:
             logger.debug(f"Attempting to create user with data: {user_data}")
-            future = self.__pool.submit(
-                db.put,
-                url='/users',
-                name=user_data['username'],
-                data=user_data
-            )
-            snapshot = future.result()
-            if snapshot is None:
-                logger.error(f"Failed to create user: {user_data['username']}")
-                raise ValueError('User not created')
-            logger.info(f"User created successfully: {user_data['username']}")
+            url = f"{self.__dsn}/users/{user_data['username']}.json"
+            if self.__auth:
+                url += f"?auth={self.__auth}"
+            
+            async with session.put(url, json=user_data) as response:
+                snapshot = await response.json()
+                if snapshot is None:
+                    logger.error(f"Failed to create user: {user_data['username']}")
+                    raise ValueError('User not created')
+                logger.info(f"User created successfully: {user_data['username']}")
+                return snapshot
         except Exception as e:
             logger.exception(f"Exception in put_data for user {user_data['username']}: {e}")
             raise
-    
-    @_with_connection
-    def get_data(self, db, username, data=None):
+
+    @_with_session
+    async def get_data(self, session: aiohttp.ClientSession, username: str, data: Optional[str] = None):
         """
         Retrieves user data from the database.
-
-        :param username: Username of the user.
-        :param data: Specific field to retrieve.
-        :return: User data or specific field.
         """
         try:
-            snapshot = db.get(
-                url=f'/users/{username}',
-                name=data
-            )
-            if snapshot is None:
-                logger.warning(f"Data not found for user: {username}")
-            else:
-                logger.info(f"Data retrieved for user: {username}")
-            return snapshot
+            url = f"{self.__dsn}/users/{username}"
+            if data:
+                url += f"/{data}"
+            url += ".json"
+            if self.__auth:
+                url += f"?auth={self.__auth}"
+
+            async with session.get(url) as response:
+                snapshot = await response.json()
+                if snapshot is None:
+                    logger.warning(f"Data not found for user: {username}")
+                else:
+                    logger.info(f"Data retrieved for user: {username}")
+                return snapshot
         except Exception as e:
             logger.exception(f"Exception in get_data for user {username}: {e}")
             raise
-    
-    @_with_connection
-    def get_all_data(self, db):
+
+    @_with_session
+    async def get_all_data(self, session: aiohttp.ClientSession):
         """
         Retrieves all user data from the database.
         """
-        return db.get('/users', None)
+        url = f"{self.__dsn}/users.json"
+        if self.__auth:
+            url += f"?auth={self.__auth}"
+        
+        async with session.get(url) as response:
+            return await response.json()
 
-    @_with_connection
-    def update_data(self, db, username, user_data):
+    @_with_session
+    async def update_data(self, session: aiohttp.ClientSession, username: str, user_data: dict):
         """
         Updates user data in the database.
-
-        :param username: Username of the user.
-        :param user_data: Data to update.
-        :return: Snapshot of updated data.
         """
         try:
-            snapshot = db.put(
-                url=f'/users',
-                name=username,
-                data=user_data
-            )
-            if snapshot is None:
-                logger.error(f"Failed to update user: {username}")
-            else:
-                logger.info(f"User updated successfully: {username}")
-            return snapshot
+            url = f"{self.__dsn}/users/{username}.json"
+            if self.__auth:
+                url += f"?auth={self.__auth}"
+            
+            async with session.put(url, json=user_data) as response:
+                snapshot = await response.json()
+                if snapshot is None:
+                    logger.error(f"Failed to update user: {username}")
+                else:
+                    logger.info(f"User updated successfully: {username}")
+                return snapshot
         except Exception as e:
             logger.exception(f"Exception in update_data for user {username}: {e}")
             raise
 
-    @_with_connection
-    def delete_data(self, db, username):
+    @_with_session
+    async def delete_data(self, session: aiohttp.ClientSession, username: str):
         """
         Deletes a user from the database.
-
-        :param username: Username of the user to delete.
-        :return: True if deleted, else False.
         """
         try:
-            deleted = db.delete(
-                url=f'/users',
-                name=username
-            )
-            if deleted is False:
-                logger.error(f"Failed to delete user: {username}")
-            else:
-                logger.info(f"User deleted successfully: {username}")
-            return deleted
+            url = f"{self.__dsn}/users/{username}.json"
+            if self.__auth:
+                url += f"?auth={self.__auth}"
+            
+            async with session.delete(url) as response:
+                deleted = await response.json()
+                if deleted is False:
+                    logger.error(f"Failed to delete user: {username}")
+                else:
+                    logger.info(f"User deleted successfully: {username}")
+                return deleted
         except Exception as e:
             logger.exception(f"Exception in delete_data for user {username}: {e}")
             raise
 
-    @_with_connection
-    def get_progress(self, db, username: str, exercise_name: Optional[str] = None) -> Optional[Dict]:
+    @_with_session
+    async def get_progress(self, session: aiohttp.ClientSession, username: str, exercise_name: Optional[str] = None) -> Optional[Dict]:
         """
-        Retrieves progress data from the database.
-
-        Args:
-            username: Username of the user
-            exercise_name: Optional specific exercise to retrieve
-        Returns:
-            Progress data dictionary or None
+        Retrieves progress data for a user.
         """
-        try:
-            snapshot = db.get(
-                url=f'/progress/{username}',
-                name=None
-            )
-            
-            if snapshot is None:
-                logger.warning(f"Progress data not found for user: {username}")
-                return None
-            
-            # For exercise-specific query
-            if exercise_name:
-                if snapshot and exercise_name in snapshot:
-                    return {
-                        "data": {
-                            username: {
-                                exercise_name: snapshot[exercise_name]
-                            }
-                        }
-                    }
-                return None
-            
-            # Return all exercises
-            logger.info(f"Progress data retrieved for user: {username}")
-            return {"data": {username: snapshot}}
-            
-        except Exception as e:
-            logger.exception(f"Exception in get_progress for user {username}: {e}")
-            raise
+        url = f"{self.__dsn}/progress/{username}"
+        if exercise_name:
+            url += f"/{exercise_name}"
+        url += ".json"
+        if self.__auth:
+            url += f"?auth={self.__auth}"
+        
+        async with session.get(url) as response:
+            return await response.json()
 
-    @_with_connection
-    def put_progress(self, db, username: str, exercise_name: str, exercise_data: ExerciseData):
+    @_with_session
+    async def put_progress(self, session: aiohttp.ClientSession, username: str, exercise_name: str, exercise_data: dict):
         """
         Adds exercise progress data for a user. New data is appended under the date,
         not updated.
@@ -198,7 +182,7 @@ class RTDBHelper:
         """
         try:
             # Get existing data for the user
-            existing_data = db.get(url=f'/progress/{username}', name=None) or {}
+            existing_data = await self.get_progress(username)
             
             # Add new data
             if not isinstance(existing_data, dict):
@@ -208,25 +192,23 @@ class RTDBHelper:
                 existing_data[exercise_name] = {}
                 
             # Save to database
-            future = self.__pool.submit(
-                db.put,
-                url='/progress',
-                name=username,
-                data=existing_data
-            )
-            snapshot = future.result()
+            url = f"{self.__dsn}/progress/{username}.json"
+            if self.__auth:
+                url += f"?auth={self.__auth}"
             
-            if snapshot is None:
-                logger.error(f"Failed to save progress for user {username}, exercise: {exercise_name}")
-                raise ValueError('Progress not saved')
-            logger.info(f"Progress saved successfully for user {username}, exercise: {exercise_name}")
+            async with session.put(url, json=existing_data) as response:
+                snapshot = await response.json()
+                if snapshot is None:
+                    logger.error(f"Failed to save progress for user {username}, exercise: {exercise_name}")
+                    raise ValueError('Progress not saved')
+                logger.info(f"Progress saved successfully for user {username}, exercise: {exercise_name}")
             
         except Exception as e:
             logger.exception(f"Exception in put_progress for user {username}, exercise {exercise_name}: {e}")
             raise
 
-    @_with_connection
-    def update_progress(self, db, username: str, exercise_name: str, exercise_data: any):
+    @_with_session
+    async def update_progress(self, session: aiohttp.ClientSession, username: str, exercise_name: str, exercise_data: dict):
         """
         Updates exercise progress data for a user.
         
@@ -236,13 +218,13 @@ class RTDBHelper:
             exercise_data: ExerciseData object containing the updated progress data
         """
         try:
-            return self.put_progress(username, exercise_name, exercise_data)
+            return await self.put_progress(username, exercise_name, exercise_data)
         except Exception as e:
             logger.exception(f"Exception in update_progress for user {username}: {e}")
             raise
 
-    @_with_connection
-    def delete_progress(self, db, username: str, exercise_name: Optional[str] = None):
+    @_with_session
+    async def delete_progress(self, session: aiohttp.ClientSession, username: str, exercise_name: Optional[str] = None):
         """
         Deletes progress data from the database.
 
@@ -255,38 +237,31 @@ class RTDBHelper:
         try:
             if exercise_name:
                 # Delete specific exercise
-                existing_data = self.get_progress(username)
-                if existing_data and "exercise" in existing_data:
-                    if exercise_name in existing_data["exercise"]:
-                        del existing_data["exercise"][exercise_name]
-                        snapshot = db.put(
-                            url='/progress',
-                            name=username,
-                            data=existing_data
-                        )
+                existing_data = await self.get_progress(username)
+                if existing_data and exercise_name in existing_data:
+                    del existing_data[exercise_name]
+                    url = f"{self.__dsn}/progress/{username}.json"
+                    if self.__auth:
+                        url += f"?auth={self.__auth}"
+                    
+                    async with session.put(url, json=existing_data) as response:
+                        snapshot = await response.json()
                         return snapshot is not None
                 return False
             else:
                 # Delete all progress
-                deleted = db.delete(
-                    url='/progress',
-                    name=username
-                )
-                if deleted is False:
-                    logger.error(f"Failed to delete progress for user: {username}")
-                else:
-                    logger.info(f"Progress deleted successfully for user: {username}")
-                return deleted
+                url = f"{self.__dsn}/progress/{username}.json"
+                if self.__auth:
+                    url += f"?auth={self.__auth}"
+                
+                async with session.delete(url) as response:
+                    deleted = await response.json()
+                    if deleted is False:
+                        logger.error(f"Failed to delete progress for user: {username}")
+                    else:
+                        logger.info(f"Progress deleted successfully for user: {username}")
+                    return deleted
                 
         except Exception as e:
             logger.exception(f"Exception in delete_progress for user {username}: {e}")
             raise
-
-    def __del__(self):
-        """Cleanup connections when the helper is destroyed."""
-        self.__pool.shutdown(wait=True)
-        self.__connections.clear()
-        logger.info("RTDBHelper connections cleaned up.")
-
-
-rtdb = RTDBHelper()

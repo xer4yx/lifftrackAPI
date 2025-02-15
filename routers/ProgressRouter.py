@@ -1,17 +1,16 @@
 from pydantic import ValidationError
 from typing import Optional, Annotated
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query, status
+from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from lifttrack import network_logger
 from lifttrack.models import User, ExerciseData
 from lifttrack.auth import get_current_user
-from lifttrack.dbhandler.rest_rtdb import rtdb
+from lifttrack.dbhandler.rest_rtdb import RTDBHelper
 from lifttrack.utils.logging_config import setup_logger, log_network_io
-
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
-from fastapi.responses import JSONResponse
-
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from .manager import HTTPConnectionPool
 
 # Configure logging
 logger = setup_logger("progress_routes", "router.log")
@@ -33,45 +32,42 @@ async def create_progress(
     exercise: str, 
     exercise_data: ExerciseData,
     request: Request,
+    response: Response,
     current_user: User = Depends(get_current_user)
 ):
     """
     Endpoint to create or append exercise progress data.
     """
     try:
-        reponse = None
         if username != current_user.username:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot modify other user's progress"
             )
-
-        rtdb.put_progress(username, exercise, exercise_data)
-        
-        response = JSONResponse(
-            content={"msg": "Progress saved successfully"},
-            status_code=status.HTTP_201_CREATED
-        )
-        return response
+        async with HTTPConnectionPool.get_session() as session:
+            async with RTDBHelper(session) as rtdb:
+                await rtdb.put_progress(username, exercise, exercise_data)
+            
+                return JSONResponse(
+                    content={"msg": "Progress saved successfully"},
+                    status_code=status.HTTP_201_CREATED
+                )
     except ValidationError as vale:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": str(vale)},
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
         )
-        return response
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
     except Exception as e:
-        response = JSONResponse(
+        logger.exception(f"Error in create_progress: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in create_progress: {e}")
-        return response
     finally:
         log_network_io(
             logger=network_logger, 
@@ -85,6 +81,7 @@ async def create_progress(
 async def get_progress(
     username: str,
     request: Request,
+    response: Response,
     exercise: Annotated[Optional[str], Query(description="Exercise name")] = None,
     current_user: User = Depends(get_current_user)
 ):
@@ -92,38 +89,35 @@ async def get_progress(
     Endpoint to retrieve progress data.
     """
     try:
-        response = None
         if username != current_user.username:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot access other user's progress"
             )
-
-        progress = rtdb.get_progress(username, exercise)
-        if progress is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Progress data not found"
-            )
-            
-        response = JSONResponse(
-            content=progress,
-            status_code=status.HTTP_200_OK
-        )
-        return response
+        async with HTTPConnectionPool.get_session() as session:
+            async with RTDBHelper(session) as rtdb:
+                progress = await rtdb.get_progress(username, exercise)
+                if progress is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Progress data not found"
+                    )
+                    
+                return JSONResponse(
+                    content=progress,
+                    status_code=status.HTTP_200_OK
+                )
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
     except Exception as e:
-        response = JSONResponse(
+        logger.exception(f"Error in get_progress: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in get_progress: {e}")
-        return response
     finally:
         log_network_io(
             logger=network_logger, 
@@ -135,8 +129,9 @@ async def get_progress(
 @router.delete("/{username}")
 @limiter.limit("10/minute")
 async def delete_progress(
-    username: str,
     request: Request,
+    response: Response,
+    username: str,
     exercise: Optional[str] = None,
     current_user: User = Depends(get_current_user)
 ):
@@ -144,38 +139,35 @@ async def delete_progress(
     Endpoint to delete progress data.
     """
     try:
-        response = None
         if username != current_user.username:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot delete other user's progress"
             )
-
-        deleted = rtdb.delete_progress(username, exercise)
-        if not deleted:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Progress deletion failed"
-            )
-            
-        response = JSONResponse(
-            content={"msg": "Progress deleted successfully"},
-            status_code=status.HTTP_200_OK
-        )
-        return response
+        async with HTTPConnectionPool.get_session() as session:
+            async with RTDBHelper(session) as rtdb:
+                deleted = await rtdb.delete_progress(username, exercise)
+                if not deleted:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Progress deletion failed"
+                    )
+                    
+                return JSONResponse(
+                    content={"msg": "Progress deleted successfully"},
+                    status_code=status.HTTP_200_OK
+                )
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
     except Exception as e:
-        response = JSONResponse(
+        logger.exception(f"Error in delete_progress: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in delete_progress: {e}")
-        return response
     finally:
         log_network_io(
             logger=network_logger, 

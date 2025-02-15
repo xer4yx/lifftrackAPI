@@ -9,9 +9,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from lifttrack import config
-from lifttrack.dbhandler.rest_rtdb import rtdb
+from lifttrack.dbhandler.rest_rtdb import RTDBHelper
 from lifttrack.models import User, TokenData
 from lifttrack.utils.logging_config import setup_logger
+from routers.manager import HTTPConnectionPool
 
 
 # Configure logging for auth.py
@@ -30,15 +31,21 @@ hash_context = CryptContext(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+# Initialize username cache
 existing_usernames = set()
-try:
-    users = rtdb.get_all_data()
-    existing_usernames.update(username for username in users.keys())
-    logger.info(f"Username cache initialized with {len(existing_usernames)} entries")
-except Exception as e:
-    logger.error(f"Failed to initialize username cache: {e}")
-    
-    
+
+async def initialize_username_cache():
+    """Initialize the username cache asynchronously."""
+    try:
+        async with RTDBHelper() as rtdb:
+            users = await rtdb.get_all_data()
+            if users:
+                existing_usernames.update(username for username in users.keys())
+                logger.info(f"Username cache initialized with {len(existing_usernames)} entries")
+    except Exception as e:
+        logger.error(f"Failed to initialize username cache: {e}")
+
+
 # Add these helper functions to manage the cache
 def add_to_username_cache(username: str):
     """Add a username to the cache."""
@@ -122,52 +129,44 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    user_data = rtdb.get_data(username=token_data.username)
-    if user_data is None:
-        logger.warning(f"User not found for token: {username}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    async with HTTPConnectionPool.get_session() as session:
+        async with RTDBHelper(session) as rtdb:
+            user_data = await rtdb.get_data(username=token_data.username)
+            if user_data is None:
+                logger.warning(f"User not found for token: {username}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            try:
+                # Convert dictionary to User model
+                user = User.model_validate(user_data)
+                logger.info(f"User retrieved successfully: {username}")
+                return user
+            except Exception as e:
+                logger.error(f"Error converting user data to User model: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Error processing user data"
+                )
 
-    try:
-        # Convert dictionary to User model
-        user = User(
-            id=user_data.get("id"),
-            fname=user_data.get("fname"),
-            lname=user_data.get("lname"),
-            username=user_data.get("username"),
-            phoneNum=user_data.get("phoneNum"),
-            email=user_data.get("email"),
-            password=user_data.get("password"),
-            pfp=user_data.get("pfp"),
-            isAuthenticated=user_data.get("isAuthenticated", False),
-            isDeleted=user_data.get("isDeleted", False)
-        )
-        logger.info(f"User retrieved successfully: {username}")
-        return user
-    except Exception as e:
-        logger.error(f"Error converting user data to User model: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error processing user data"
-        )
-        
 
 async def check_password_update(user: User = Depends(lambda user: validate_input(user, is_update=True))):
     """
     Dependency to check if password is being updated in user data.
     Returns tuple of (user, is_password_update).
     """
-    existing_user_data = rtdb.get_data(user.username)
-    if not existing_user_data:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
-    is_password_update = existing_user_data.get("password") != user.password
-    return user, is_password_update
+    async with HTTPConnectionPool.get_session() as session:
+        async with RTDBHelper(session) as rtdb:
+            existing_user_data = await rtdb.get_data(user.username)
+            if not existing_user_data:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found"
+                )
+            is_password_update = existing_user_data.get("password") != user.password
+            return user, is_password_update
 
 
 def verify_and_update_password(plain_password, hashed_password):
