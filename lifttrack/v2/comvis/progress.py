@@ -20,47 +20,29 @@ def calculate_form_accuracy(features, predicted_class_name):
     accuracy = 1.0
     suggestions = []
 
-    if predicted_class_name == "barbell_benchpress":
-        angles = features['angles']
+    if predicted_class_name == "benchpress":
+        angles = features['joint_angles']
         if angles.get('left_shoulder_left_elbow_left_wrist', 0) > 45:
             accuracy -= 0.1
             suggestions.append("Elbows should be at a 45-degree angle.")
             
-    elif predicted_class_name == "barbell_deadlift":
+    elif predicted_class_name == "deadlift":
         speed = features['speed']
         if speed.get('left_hip', 0) > 2.0:
             accuracy -= 0.1
             suggestions.append("Control the speed of your movement.")
 
-    elif predicted_class_name == "barbell_rdl":
+    elif predicted_class_name == "romanian_deadlift":
         stability = features['stability']
-        if stability.get('core_stability', 0) < 0.8:
+        if stability < 0.8:
             accuracy -= 0.1
             suggestions.append("Maintain core stability throughout the lift.")
 
-    elif predicted_class_name == "barbell_shoulderpress":
-        alignment = features['alignment']
+    elif predicted_class_name == "shoulder_press":
+        alignment = features['body_alignment']
         if alignment.get('head_to_hips', 0) < 0.9:
             accuracy -= 0.1
             suggestions.append("Keep alignment from head to hips for balance.")
-
-    elif predicted_class_name == "dumbbell_benchpress":
-        angles = features['angles']
-        if angles.get('left_elbow_left_wrist', 0) > 45:
-            accuracy -= 0.1
-            suggestions.append("Keep elbows closer to a 45-degree angle.")
-
-    elif predicted_class_name == "dumbbell_deadlift":
-        alignment = features['alignment']
-        if alignment.get('spine_angle', 0) < 0.85:
-            accuracy -= 0.1
-            suggestions.append("Maintain a neutral spine angle.")
-
-    elif predicted_class_name == "dumbbell_shoulderpress":
-        stability = features['stability']
-        if stability.get('shoulder_stability', 0) < 0.75:
-            accuracy -= 0.1
-            suggestions.append("Keep shoulder stability through the lift.")
     logger.info(f"Form accuracy: {accuracy}, Suggestions: {suggestions}")
     return accuracy, suggestions
 

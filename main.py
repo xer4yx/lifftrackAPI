@@ -31,6 +31,7 @@ from slowapi.util import get_remote_address
 from routers.UsersRouter import router as users_router
 from routers.ProgressRouter import router as progress_router
 from routers.WebsocketRouter import router as websocket_router
+from routers.InferenceRouter import router as inference_router
 
 from routers.v2.UsersRouter import router as v2_users_router
 
@@ -41,6 +42,7 @@ app = FastAPI()
 app.include_router(users_router)
 app.include_router(progress_router)
 app.include_router(websocket_router)
+app.include_router(inference_router)
 
 # v2 API Routers
 app.include_router(v2_users_router)

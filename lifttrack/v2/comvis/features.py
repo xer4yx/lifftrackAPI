@@ -115,7 +115,7 @@ def extract_body_alignment(keypoints):
     if 'left_shoulder' in keypoints and 'right_shoulder' in keypoints and 'left_hip' in keypoints and 'right_hip' in keypoints:
         shoulder_angle = calculate_angle(keypoints['left_shoulder'], keypoints['right_shoulder'], keypoints['left_hip'])
         hip_angle = calculate_angle(keypoints['left_hip'], keypoints['right_hip'], keypoints['right_shoulder'])
-        return (shoulder_angle, hip_angle)
+        return {"0": shoulder_angle, "1": hip_angle}
     
     return None
 
