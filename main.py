@@ -1,38 +1,40 @@
 import threading
-
-from lifttrack import timedelta, threading, network_logger
-from lifttrack.utils.logging_config import log_network_io, setup_logger
-from lifttrack.utils.syslogger import log_cpu_and_mem_usage, start_resource_monitoring
-from lifttrack.dbhandler.rest_rtdb import rtdb
-from lifttrack.models import User, Token, AppInfo, LoginForm
-from lifttrack.auth import (
-    create_access_token,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    get_current_user,
-    verify_password
-)
-
 from fastapi import (
     FastAPI, 
     Depends, 
     HTTPException, 
     status,
-    Request
+    Request,
+    Response
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.encoders import jsonable_encoder
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
+from lifttrack import timedelta, threading, network_logger
+from lifttrack.utils.logging_config import log_network_io, setup_logger
+from lifttrack.utils.syslogger import log_cpu_and_mem_usage, start_resource_monitoring
+from lifttrack.dbhandler.rest_rtdb import RTDBHelper
+from lifttrack.models import User, Token, AppInfo, LoginForm
+from lifttrack.auth import (
+    create_access_token,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    get_current_user,
+    verify_password,
+    initialize_username_cache
+)
+
+from routers.manager import HTTPConnectionPool
 from routers.UsersRouter import router as users_router
 from routers.ProgressRouter import router as progress_router
 from routers.WebsocketRouter import router as websocket_router
 from routers.InferenceRouter import router as inference_router
-
 from routers.v2.UsersRouter import router as v2_users_router
 
 # Initialize FastAPI app
@@ -43,8 +45,6 @@ app.include_router(users_router)
 app.include_router(progress_router)
 app.include_router(websocket_router)
 app.include_router(inference_router)
-
-# v2 API Routers
 app.include_router(v2_users_router)
 
 # Initialize Limiter
@@ -79,30 +79,36 @@ system_logger = setup_logger("system", "server_resource.log")
 # Start resource monitoring
 start_resource_monitoring(system_logger, log_cpu_and_mem_usage, 60)
 
+@app.on_event("startup")
+async def startup_event():
+    # Initialize username cache
+    await initialize_username_cache()
+    
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(path="./favicon.ico", media_type="image/x-icon")
+
 # API Endpoint [ROOT]
 @app.get("/")
 @limiter.limit("10/minute")  # Apply specific rate limit
-async def read_root(request: Request):
+async def read_root(request: Request, response: Response):
     """Lifttrack API root endpoint."""
     try:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": "Welcome to LiftTrack!"},
             status_code=status.HTTP_200_OK
         )
-        return response
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
     except Exception as e:
-        response = JSONResponse(
+        logger.exception(f"Error in read_root: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in read_root: {e}")
-        return response
     finally:
         log_network_io(
             logger=network_logger, 
@@ -115,30 +121,24 @@ async def read_root(request: Request):
 # API Endpoint [About App]
 @app.get("/app-info")
 @limiter.limit("20/minute")
-async def get_app_info(request: Request):
+async def get_app_info(request: Request, response: Response, appinfo: AppInfo):
     """Endpoint to get information about the app."""
     try:
-        # Construct the AppInfo object here or retrieve it from a source
-        appinfo = AppInfo()
-        
-        response = JSONResponse(
-            content=appinfo,
+        return JSONResponse(
+            content=jsonable_encoder(appinfo),
             status_code=status.HTTP_200_OK
         )
-        return response
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
     except Exception as e:
-        response = JSONResponse(
+        logger.exception(f"Error in get_app_info: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in get_app_info: {e}")
-        return response
     finally:
         log_network_io(
             logger=network_logger, 
@@ -151,7 +151,7 @@ async def get_app_info(request: Request):
 # API Endpoint [Authentication Operations]
 @app.post("/login")
 @limiter.limit("3/minute")  # Limit login attempts
-async def login(login_form: LoginForm, request: Request):
+async def login(login_form: LoginForm, request: Request, response: Response):
     """
     API endpoint for user login.
 
@@ -160,39 +160,37 @@ async def login(login_form: LoginForm, request: Request):
         request: FastAPI Request object.
     """
     try:
-        response = None
-        user_data = rtdb.get_data(login_form.username)
+        async with HTTPConnectionPool.get_session() as session:
+            async with RTDBHelper(session) as rtdb:
+                user_data = await rtdb.get_data(login_form.username)
 
-        if user_data is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
+                if user_data is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="User not found"
+                    )
 
-        if not verify_password(login_form.password, user_data.get("password", "")):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password"
-            )
+                if not verify_password(login_form.password, user_data.get("password", "")):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid username or password"
+                    )
 
-        response = JSONResponse(
-            content={"message": "Login successful", "success": True},
-            status_code=status.HTTP_200_OK
-        )
-        return response
+                return JSONResponse(
+                    content={"message": "Login successful", "success": True},
+                    status_code=status.HTTP_200_OK
+                )
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
     except Exception as e:
-        response = JSONResponse(
+        logger.exception(f"Error in login: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in login: {e}")
-        return response
     finally:
         log_network_io(
             logger=network_logger, 
@@ -204,7 +202,7 @@ async def login(login_form: LoginForm, request: Request):
 
 @app.post("/token", response_model=Token)
 @limiter.limit("10/minute")  # Limit token requests
-async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+async def login_for_access_token(request: Request, response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
     """
     Endpoint to get an access token.
 
@@ -213,37 +211,45 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
         request: FastAPI Request object.
     """
     try:
-        response = None
-        user = rtdb.get_data(form_data.username)
+        async with HTTPConnectionPool.get_session() as session: 
+            async with RTDBHelper(session) as rtdb:
+                user = await rtdb.get_data(form_data.username)
 
-        if user is None or not verify_password(form_data.password, user.get("password", "")):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": form_data.username}, expires_delta=access_token_expires
-        )
-        response = JSONResponse(
-            content={"access_token": access_token, "token_type": "bearer"},
-            status_code=status.HTTP_200_OK
-        )
-        return response
+                if user is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="User not found"
+                    )
+
+                if not verify_password(form_data.password, user.get("password", "")):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid username or password"
+                    )
+                access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+                access_token = create_access_token(
+                    data={"sub": form_data.username}, expires_delta=access_token_expires
+                )
+                return JSONResponse(
+                    content={
+                        "access_token": access_token, 
+                        "token_type": "bearer",
+                        "message": "Login successful", 
+                        "success": True
+                    },
+                    status_code=status.HTTP_200_OK
+                )
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
     except Exception as e:
-        response = JSONResponse(
+        logger.exception(f"Error in login_for_access_token: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in login_for_access_token: {e}")
-        return response
     finally:
         log_network_io(
             logger=network_logger, 
@@ -255,31 +261,28 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
 
 @app.post("/logout")
 @limiter.limit("10/minute")
-async def logout(request: Request):
+async def logout(request: Request, response: Response):
     """
     Endpoint to logout user and invalidate their token.
     """
     try:
-        response = None
+        # TODO: Add token revocation
         # You might want to add the token to a blacklist here if implementing token revocation
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": "Successfully logged out"},
             status_code=status.HTTP_200_OK
         )
-        return response
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
     except Exception as e:
-        response = JSONResponse(
+        logger.exception(f"Error in logout: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in logout: {e}")
-        return response
     finally:
         log_network_io(
             logger=network_logger, 
@@ -292,7 +295,7 @@ async def logout(request: Request):
 # API Endpoint [RTDB Operations]
 @app.get("/users/me/")
 @limiter.limit("30/minute")
-async def read_users_me(request: Request, current_user: User = Depends(get_current_user)):
+async def read_users_me(request: Request, response: Response, current_user: User = Depends(get_current_user)):
     """
     Endpoint to get the current user.
 
@@ -301,38 +304,21 @@ async def read_users_me(request: Request, current_user: User = Depends(get_curre
         request: FastAPI Request object.
     """
     try:
-        response = None
-        # Convert User model to dictionary
-        user_dict = {
-            "id": current_user.id,
-            "fname": current_user.fname,
-            "lname": current_user.lname,
-            "username": current_user.username,
-            "phoneNum": current_user.phoneNum,
-            "email": current_user.email,
-            "password": current_user.password,
-            "pfp": current_user.pfp,
-            "isAuthenticated": current_user.isAuthenticated,
-            "isDeleted": current_user.isDeleted
-        }
-        response = JSONResponse(
-            content=user_dict,
+        return JSONResponse(
+            content=jsonable_encoder(current_user),
             status_code=status.HTTP_200_OK
         )
-        return response
     except HTTPException as httpe:
-        response = JSONResponse(
+        return JSONResponse(
             content={"msg": httpe.detail},
             status_code=httpe.status_code
         )
-        return response
     except Exception as e:
-        response = JSONResponse(
+        logger.exception(f"Error in read_users_me: {e}")
+        return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        logger.exception(f"Error in read_users_me: {e}")
-        return response
     finally:
         log_network_io(
             logger=network_logger, 
@@ -340,14 +326,3 @@ async def read_users_me(request: Request, current_user: User = Depends(get_curre
             method=request.method, 
             response_status=response.status_code
         )
-
-
-# @app.get("/stream-tracking")
-# async def video_feed():  # Web version
-#     """
-#     Endpoint for the video feed.
-#     """
-#     return StreamingResponse(
-#         generate_frames(),
-#         media_type="multipart/x-mixed-replace; boundary=frame"
-#     )
