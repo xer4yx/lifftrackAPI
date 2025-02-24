@@ -55,7 +55,6 @@ class ObjectTracker:
         try:
             # Run Roboflow inference for object detection
             roboflow_results = self.__client.infer(frame, model_id=f"{self.__project_id}/{self.__model_version}")
-            comvis_logger.info(f"Received Roboflow Inference: {roboflow_results}")
             
             if not roboflow_results or not isinstance(roboflow_results, dict):
                 return []  # Return empty dict for invalid results

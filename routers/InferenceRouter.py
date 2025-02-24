@@ -127,13 +127,11 @@ async def inference_endpoint(
                     key=time_key
                 )
 
-                # Encode frame to JPEG before sending back
                 _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 processed_frames.append(base64.b64encode(buffer).decode('utf-8'))  # Store processed frame
 
             frame_count += 1
 
-        # Return processed frames as a video or a list of frames
         return {
             'processed_frames': processed_frames,
             'suggestions': suggestions,

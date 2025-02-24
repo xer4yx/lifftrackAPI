@@ -87,7 +87,6 @@ class ThreeDimInference:
         frames_input_batch = np.expand_dims(frames_input, axis=0)
         predictions = self.__model.predict(frames_input_batch)
         predicted_class_index = np.argmax(predictions, axis=1)[0]
-        logger.info(f"Predicted class index: {predicted_class_index}")
         return CLASS_NAMES[predicted_class_index]
 
     def provide_form_suggestions(self, predicted_class_name, features):
