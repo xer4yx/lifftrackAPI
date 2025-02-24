@@ -57,7 +57,6 @@ class MovenetInference:
         # MoveNet inference
         results = self.__movenet(input_img)
         keypoints = results["output_0"].numpy()[0, 0, :, :3]
-        print(f"Received Movenet Keypoints: {keypoints}")  # Extract keypoints
 
         # Process keypoints for annotations
         shaped_keypoints = self.process_keypoints(keypoints, frame.shape)
