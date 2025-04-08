@@ -24,3 +24,5 @@ requirements.txt
 !logo.jpg
 
 *.http
+
+*tests/public/
