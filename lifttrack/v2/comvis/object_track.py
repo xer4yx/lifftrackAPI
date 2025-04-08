@@ -5,6 +5,7 @@ from inference_sdk import InferenceHTTPClient
 from lifttrack import config
 from lifttrack.comvis.tensor import check_docker_container_status
 from lifttrack.utils.logging_config import setup_logger
+from .utils import resize_to_192x192
 from lifttrack.models import Object
 
 container_logger = setup_logger("docker-container", "container.log")
@@ -54,7 +55,8 @@ class ObjectTracker:
     def process_frames_and_get_annotations(self, frame):
         try:
             # Run Roboflow inference for object detection
-            roboflow_results = self.__client.infer(frame, model_id=f"{self.__project_id}/{self.__model_version}")
+            resized_frame = resize_to_192x192(frame)
+            roboflow_results = self.__client.infer(resized_frame, model_id=f"{self.__project_id}/{self.__model_version}")
             
             if not roboflow_results or not isinstance(roboflow_results, dict):
                 return []  # Return empty dict for invalid results

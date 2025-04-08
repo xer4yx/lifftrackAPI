@@ -1,9 +1,10 @@
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
+import cv2  
 import base64
-from io import BytesIO
+import numpy as np
 from lifttrack.utils.logging_config import setup_logger
+from .features import (calculate_angle, extract_joint_angles, extract_movement_patterns,
+                      calculate_speed, extract_body_alignment, calculate_stability,
+                      detect_form_issues)
 
 logger = setup_logger("progress-v2", "comvis.log")
 
@@ -15,72 +16,197 @@ def display_keypoints_on_frame(frame, keypoints, threshold=0.5):
             cv2.putText(frame, joint, (int(x), int(y)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
     return frame
 
-def calculate_form_accuracy(features, predicted_class_name):
-    print(f"Features: {features}")
+def check_bench_press_form(features, predicted_class_name):
+    """Check bench press form using enhanced feature detection."""
+    accuracy = 1.0
+    
+    # Get form issues using the new detect_form_issues function
+    form_issues = detect_form_issues(features, 'bench_press')
+    suggestions = []
+    
+    # Common checks using enhanced feature calculations
+    angles = features.get('joint_angles', {})
+    stability = features.get('stability', 0)
+    body_alignment = features.get('body_alignment', {})
+    
+    # Check equipment type
+    objects = features.get('objects', {})
+    equipment_type = objects.get('type', '').lower() if objects else ''
+    
+    # Five-point contact check using improved stability calculation
+    if stability > 50:
+        accuracy -= 0.1
+        suggestions.append("Maintain five-point body contact with the bench throughout the movement.")
+    
+    # Check wrist alignment using form_issues
+    if form_issues.get('wrist_alignment'):
+        accuracy -= 0.1
+        suggestions.append("Keep wrists in line with elbows throughout the entire lift.")
+    
+    # Check back arching using enhanced body alignment
+    vertical_alignment = float(body_alignment.get('0', 0))
+    if vertical_alignment > 20:  # More than 20 degrees from vertical
+        accuracy -= 0.15
+        suggestions.append("Avoid excessive back arching. Lower back should remain in contact with the bench.")
+    
+    # Equipment-specific checks with improved feature detection
+    if "barbell" in equipment_type:
+        if form_issues.get('elbow_position'):
+            accuracy -= 0.15
+            suggestions.append("Keep elbows at proper angle during barbell bench press.")
+        
+        # Bar path check using enhanced movement pattern detection
+        lateral_alignment = float(body_alignment.get('1', 0))
+        if lateral_alignment > 15:  # More than 15 degrees of lateral movement
+            accuracy -= 0.15
+            suggestions.append("Bar path should be down and slightly forward, then up and slightly back.")
+            
+    elif "dumbbell" in equipment_type or len(equipment_type) == 0:
+        # Enhanced dumbbell-specific checks
+        if "incline" in predicted_class_name:
+            # Use improved angle calculation for incline position
+            shoulder_angle = angles.get('left_shoulder_left_elbow_left_wrist', 180)
+            if abs(shoulder_angle - 45) > 10:  # More than 10 degrees off from 45
+                accuracy -= 0.15
+                suggestions.append("Keep upper arms at 45° to the torso during incline dumbbell press.")
+    
+    accuracy = max(0.0, min(1.0, accuracy))
+    if not suggestions:
+        suggestions.append("Form looks good! Keep it up!")
+    
+    logger.info(f"Bench press form accuracy: {accuracy}, Suggestions: {suggestions}")
+    return accuracy, suggestions
+
+def check_deadlift_form(features, predicted_class_name):
+    """Check deadlift form using enhanced feature detection."""
+    accuracy = 1.0
+    
+    # Get form issues using the new detect_form_issues function
+    form_issues = detect_form_issues(features, 'deadlift')
+    suggestions = []
+    
+    # Enhanced feature checks
+    if form_issues.get('back_angle'):
+        accuracy -= 0.2
+        suggestions.append("Keep your back flat and shoulder blades pulled together during the deadlift.")
+    
+    if form_issues.get('head_position'):
+        accuracy -= 0.1
+        suggestions.append("Keep head in a neutral position looking forward throughout the lift.")
+    
+    # Use improved stability calculation
+    stability = features.get('stability', 0)
+    if stability > 60:
+        accuracy -= 0.15
+        suggestions.append("Raise the bar, knees, hips, and shoulders in unison with a constant back angle.")
+    
+    # Use enhanced body alignment check
+    body_alignment = features.get('body_alignment', {})
+    if float(body_alignment.get('0', 0)) > 40:
+        accuracy -= 0.1
+        suggestions.append("Keep the bar in contact with the legs throughout the entire lift.")
+    
+    accuracy = max(0.0, min(1.0, accuracy))
+    if not suggestions:
+        suggestions.append("Form looks good! Keep it up!")
+    
+    logger.info(f"Deadlift form accuracy: {accuracy}, Suggestions: {suggestions}")
+    return accuracy, suggestions
+
+def check_rdl_form(features, predicted_class_name):
+    """Check Romanian deadlift form using enhanced feature detection."""
+    accuracy = 1.0
+    
+    # Get form issues using the new detect_form_issues function
+    form_issues = detect_form_issues(features, 'romanian_deadlift')
+    suggestions = []
+    
+    if form_issues.get('hip_hinge'):
+        accuracy -= 0.15
+        suggestions.append("Focus on pushing hips backward while maintaining a flat back in the Romanian deadlift.")
+    
+    # Use improved stability calculation
+    stability = features.get('stability', 0)
+    if stability > 100:
+        accuracy -= 0.15
+        suggestions.append("Engage your core to maintain a straight back throughout the Romanian deadlift.")
+    
+    # Enhanced body alignment checks
+    body_alignment = features.get('body_alignment', {})
+    vertical_alignment = float(body_alignment.get('0', 0))
+    lateral_alignment = float(body_alignment.get('1', 0))
+    
+    if vertical_alignment > 50 or lateral_alignment > 20:
+        accuracy -= 0.1
+        suggestions.append("Keep the bar in contact with the legs throughout the entire lift.")
+    
+    accuracy = max(0.0, min(1.0, accuracy))
+    if not suggestions:
+        suggestions.append("Form looks good! Keep it up!")
+    
+    logger.info(f"Romanian deadlift form accuracy: {accuracy}, Suggestions: {suggestions}")
+    return accuracy, suggestions
+
+def check_shoulder_press_form(features, predicted_class_name):
+    """Check shoulder press form using enhanced feature detection."""
     accuracy = 1.0
     suggestions = []
-
-    if predicted_class_name == "benchpress":
-        angles = features['joint_angles']
-        if angles.get('left_shoulder_left_elbow_left_wrist', 0) > 45:
-            accuracy -= 0.1
-            suggestions.append("Elbows should be at a 45-degree angle.")
-            
-    elif predicted_class_name == "deadlift":
-        speed = features['speed']
-        if speed.get('left_hip', 0) > 2.0:
-            accuracy -= 0.1
-            suggestions.append("Control the speed of your movement.")
-
-    elif predicted_class_name == "romanian_deadlift":
-        stability = features['stability']
-        if stability < 0.8:
-            accuracy -= 0.1
-            suggestions.append("Maintain core stability throughout the lift.")
-
-    elif predicted_class_name == "shoulder_press":
-        alignment = features['body_alignment']
-        if alignment.get('head_to_hips', 0) < 0.9:
-            accuracy -= 0.1
-            suggestions.append("Keep alignment from head to hips for balance.")
-    logger.info(f"Form accuracy: {accuracy}, Suggestions: {suggestions}")
+    
+    # Use enhanced stability calculation with core joints
+    stability = features.get('stability', 0)
+    if stability > 20:
+        accuracy -= 0.1
+        suggestions.append("Reduce body sway during the shoulder press for better stability.")
+    
+    # Use improved body alignment calculation
+    body_alignment = features.get('body_alignment', {})
+    vertical_alignment = float(body_alignment.get('0', 0))
+    if vertical_alignment > 65:
+        accuracy -= 0.1
+        suggestions.append("Maintain vertical alignment from head to hips during shoulder press.")
+    
+    # Enhanced movement pattern detection
+    angles = features.get('joint_angles', {})
+    left_elbow = angles.get('left_shoulder_left_elbow_left_wrist', 180)
+    right_elbow = angles.get('right_shoulder_right_elbow_right_wrist', 180)
+    
+    if (left_elbow < 30 or left_elbow > 100) or (right_elbow < 30 or right_elbow > 100):
+        accuracy -= 0.15
+        suggestions.append("Keep proper elbow position during the shoulder press.")
+    
+    accuracy = max(0.0, min(1.0, accuracy))
+    if not suggestions:
+        suggestions.append("Form looks good! Keep it up!")
+    
+    logger.info(f"Shoulder press form accuracy: {accuracy}, Suggestions: {suggestions}")
     return accuracy, suggestions
+
+def calculate_form_accuracy(features, predicted_class_name):
+    """Main function to calculate form accuracy using enhanced feature detection."""
+    print(f"Features: {features}")
+    try:
+        # Normalize exercise name to handle different formats
+        predicted_class_name = predicted_class_name.lower().replace(" ", "_")
+        
+        # Call appropriate exercise-specific function
+        if predicted_class_name in ["benchpress", "bench_press"]:
+            return check_bench_press_form(features, predicted_class_name)
+        elif predicted_class_name == "deadlift":
+            return check_deadlift_form(features, predicted_class_name)
+        elif predicted_class_name in ["romanian_deadlift", "rdl"]:
+            return check_rdl_form(features, predicted_class_name)
+        elif predicted_class_name in ["shoulder_press", "overhead_press"]:
+            return check_shoulder_press_form(features, predicted_class_name)
+        else:
+            logger.warning(f"Unknown exercise type: {predicted_class_name}")
+            return 1.0, ["Exercise type not recognized for form analysis."]
+            
+    except Exception as e:
+        logger.error(f"Error in calculate_form_accuracy: {str(e)}")
+        raise
 
 # Function to convert an image to base64 format
 def img_to_base64(image):
     _, buffer = cv2.imencode('.jpg', image)
     img_b64 = base64.b64encode(buffer).decode('utf-8')
     return img_b64
-
-# def frame_by_frame_analysis(annotations, final_annotated_frame, class_names, base_url):
-#     analysis_results = []
-#     # Remove the analyze_annotations call and directly use the annotations parameter
-#     features = annotations  
-
-#     for frame_index, feature in enumerate(features):
-#         frame_path = feature['frame_path']
-#         frame = cv2.imread(frame_path)
-
-#         analysis_features = {
-#             'angles': feature['joint_angles'],
-#             'speed': feature['speeds'],
-#             'alignment': feature['body_alignment'],
-#             'stability': {'core_stability': feature['stability']}
-#         }
-
-#         accuracy, suggestions = calculate_form_accuracy(analysis_features, predicted_class_name)
-#         frame_with_keypoints = display_keypoints_on_frame(frame, feature['keypoints'])
-#         frame_b64 = img_to_base64(frame_with_keypoints)
-
-#         analysis_results.append({
-#             'frame_b64': frame_b64,
-#             'accuracy': accuracy,
-#             'suggestions': suggestions,
-#             'frame_index': frame_index,
-#             'predicted_class_name': predicted_class_name
-#         })
-
-#     return {
-#         'frames': analysis_results,
-#         'total_frames': len(features)
-#     }
