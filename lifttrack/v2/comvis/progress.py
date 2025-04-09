@@ -36,30 +36,30 @@ def check_bench_press_form(features, predicted_class_name):
     # Five-point contact check using improved stability calculation
     if stability > 50:
         accuracy -= 0.1
-        suggestions.append("Maintain five-point body contact with the bench throughout the movement.")
+        suggestions.append("Keep five-point contact with the bench.")
     
     # Check wrist alignment using form_issues
     if form_issues.get('wrist_alignment'):
         accuracy -= 0.1
-        suggestions.append("Keep wrists in line with elbows throughout the entire lift.")
+        suggestions.append("Wrists stay aligned with elbows throughout.")
     
     # Check back arching using enhanced body alignment
     vertical_alignment = float(body_alignment.get('0', 0))
     if vertical_alignment > 20:  # More than 20 degrees from vertical
         accuracy -= 0.15
-        suggestions.append("Avoid excessive back arching. Lower back should remain in contact with the bench.")
+        suggestions.append("Don’t over-arch; lower back stays on the bench.")
     
     # Equipment-specific checks with improved feature detection
     if "barbell" in equipment_type:
         if form_issues.get('elbow_position'):
             accuracy -= 0.15
-            suggestions.append("Keep elbows at proper angle during barbell bench press.")
+            suggestions.append("Maintain proper elbow angle.")
         
         # Bar path check using enhanced movement pattern detection
         lateral_alignment = float(body_alignment.get('1', 0))
         if lateral_alignment > 15:  # More than 15 degrees of lateral movement
             accuracy -= 0.15
-            suggestions.append("Bar path should be down and slightly forward, then up and slightly back.")
+            suggestions.append("Bar path: down and forward, then up and back.")
             
     elif "dumbbell" in equipment_type or len(equipment_type) == 0:
         # Enhanced dumbbell-specific checks
@@ -68,7 +68,7 @@ def check_bench_press_form(features, predicted_class_name):
             shoulder_angle = angles.get('left_shoulder_left_elbow_left_wrist', 180)
             if abs(shoulder_angle - 45) > 10:  # More than 10 degrees off from 45
                 accuracy -= 0.15
-                suggestions.append("Keep upper arms at 45° to the torso during incline dumbbell press.")
+                suggestions.append("Arms at 45 degrees during incline press.")
     
     accuracy = max(0.0, min(1.0, accuracy))
     if not suggestions:
@@ -88,23 +88,23 @@ def check_deadlift_form(features, predicted_class_name):
     # Enhanced feature checks
     if form_issues.get('back_angle'):
         accuracy -= 0.2
-        suggestions.append("Keep your back flat and shoulder blades pulled together during the deadlift.")
+        suggestions.append("Back flat, shoulder blades tight.")
     
     if form_issues.get('head_position'):
         accuracy -= 0.1
-        suggestions.append("Keep head in a neutral position looking forward throughout the lift.")
+        suggestions.append("Head neutral, eyes forward.")
     
     # Use improved stability calculation
     stability = features.get('stability', 0)
     if stability > 60:
         accuracy -= 0.15
-        suggestions.append("Raise the bar, knees, hips, and shoulders in unison with a constant back angle.")
+        suggestions.append("Lift with knees, hips, and shoulders together.")
     
     # Use enhanced body alignment check
     body_alignment = features.get('body_alignment', {})
     if float(body_alignment.get('0', 0)) > 40:
         accuracy -= 0.1
-        suggestions.append("Keep the bar in contact with the legs throughout the entire lift.")
+        suggestions.append("Bar stays in contact with legs.")
     
     accuracy = max(0.0, min(1.0, accuracy))
     if not suggestions:
@@ -123,13 +123,13 @@ def check_rdl_form(features, predicted_class_name):
     
     if form_issues.get('hip_hinge'):
         accuracy -= 0.15
-        suggestions.append("Focus on pushing hips backward while maintaining a flat back in the Romanian deadlift.")
+        suggestions.append("Push hips back, keep back flat.")
     
     # Use improved stability calculation
     stability = features.get('stability', 0)
     if stability > 100:
         accuracy -= 0.15
-        suggestions.append("Engage your core to maintain a straight back throughout the Romanian deadlift.")
+        suggestions.append("Engage core, keep back straight.")
     
     # Enhanced body alignment checks
     body_alignment = features.get('body_alignment', {})
@@ -138,7 +138,7 @@ def check_rdl_form(features, predicted_class_name):
     
     if vertical_alignment > 50 or lateral_alignment > 20:
         accuracy -= 0.1
-        suggestions.append("Keep the bar in contact with the legs throughout the entire lift.")
+        suggestions.append("Bar stays in contact with legs.")
     
     accuracy = max(0.0, min(1.0, accuracy))
     if not suggestions:
@@ -156,14 +156,14 @@ def check_shoulder_press_form(features, predicted_class_name):
     stability = features.get('stability', 0)
     if stability > 20:
         accuracy -= 0.1
-        suggestions.append("Reduce body sway during the shoulder press for better stability.")
+        suggestions.append("Minimize body sway for stability.")
     
     # Use improved body alignment calculation
     body_alignment = features.get('body_alignment', {})
     vertical_alignment = float(body_alignment.get('0', 0))
     if vertical_alignment > 65:
         accuracy -= 0.1
-        suggestions.append("Maintain vertical alignment from head to hips during shoulder press.")
+        suggestions.append("Stay vertically aligned, head to hips.")
     
     # Enhanced movement pattern detection
     angles = features.get('joint_angles', {})
@@ -172,7 +172,7 @@ def check_shoulder_press_form(features, predicted_class_name):
     
     if (left_elbow < 30 or left_elbow > 100) or (right_elbow < 30 or right_elbow > 100):
         accuracy -= 0.15
-        suggestions.append("Keep proper elbow position during the shoulder press.")
+        suggestions.append("Keep elbows in proper position.")
     
     accuracy = max(0.0, min(1.0, accuracy))
     if not suggestions:
