@@ -1,14 +1,10 @@
 from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 
 from lifttrack.models import User
 from lifttrack.auth import get_password_hash
 from lifttrack.v2.dbhelper import get_db, FirebaseDBHelper
-
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
-
-from slowapi import Limiter
-from slowapi.util import get_remote_address, get_ipaddr
 
 router = APIRouter(
     prefix="/v2",
@@ -17,7 +13,7 @@ router = APIRouter(
 )
 
 
-@router.post("/users", response_model=User, status_code=201)
+@router.post("/users", response_model=User, status_code=status.HTTP_201_CREATED)
 async def create_user(user: User, db: FirebaseDBHelper = Depends(get_db)):
     """
         Create a new user in the Firebase database.
@@ -53,7 +49,7 @@ async def create_user(user: User, db: FirebaseDBHelper = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
 
 
-@router.get("/users", response_model=List[User])
+@router.get("/users", response_model=List[User], status_code=status.HTTP_200_OK)
 async def list_users(
     db: FirebaseDBHelper = Depends(get_db),
     is_authenticated: Optional[bool] = False,
@@ -113,12 +109,11 @@ async def list_users(
         raise HTTPException(status_code=500, detail=f"Failed to retrieve users: {str(e)}")
 
 
-@router.put("/users/{user_id}")
+@router.put("/users/{user_id}", status_code=status.HTTP_200_OK)
 async def update_user(
     user_id: str, 
     update_data: User, 
-    db: FirebaseDBHelper = Depends(get_db)
-):
+    db: FirebaseDBHelper = Depends(get_db)):
     """
     Update an existing user's information.
     
@@ -134,7 +129,7 @@ async def update_user(
         # Check if user exists
         existing_user = db.get_data('users', user_id)
         if not existing_user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
             
         # Convert Pydantic model to dict, removing None values
         update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
@@ -143,14 +138,13 @@ async def update_user(
         success = db.update_data('users', user_id, update_dict)
         
         if not success:
-            raise HTTPException(status_code=500, detail="Failed to update user")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to update user")
         
         return JSONResponse({"message": "User updated successfully"})
-    
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"User update failed: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"User update failed: {str(e)}")
 
 
 @router.delete("/users/{user_id}")

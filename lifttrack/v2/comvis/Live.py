@@ -21,7 +21,7 @@ logger = setup_logger("analyzer-v2", "comvis.log")
 class ThreeDimInference:
     def __init__(self):
         try:
-            self.__model = tf.keras.models.load_model(config.get('CNN', 'test-0.1.0'), compile=False)  # Don't load optimizer
+            self.__model = tf.keras.models.load_model(config.get('CNN', 'lifttrack_cnn'), compile=False)  # Don't load optimizer
             logger.info("Analyzer model loaded successfully")
         except Exception as e:
             logger.error(f"Error loading primary model: {e}")
@@ -86,7 +86,9 @@ class ThreeDimInference:
         frames_input = self.prepare_frames_for_input(frame_list)  # Only one value to unpack
         frames_input_batch = np.expand_dims(frames_input, axis=0)
         predictions = self.__model.predict(frames_input_batch)
-        predicted_class_index = np.argmax(predictions, axis=1)[0]
+        logger.info(f"Predictions: {predictions}")
+        predicted_class_index = tf.compat.v1.argmax(predictions[0]).numpy()
+        logger.info(f"Predicted class index: {predicted_class_index}")
         return CLASS_NAMES[predicted_class_index]
 
     def provide_form_suggestions(self, predicted_class_name, features):

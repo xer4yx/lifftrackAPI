@@ -9,9 +9,10 @@ from fastapi import HTTPException
 __all__ = ['FirebaseDBHelper']
 load_dotenv('./.env')
 options = {
-    'databaseURL': config.get(section='Firebase', option='RTDB_DSN'),
+    'databaseURL': config.get(section='Firebase', option='FIREBASE_DEV_DB'),
     'databaseAuthVariableOverride': {
-        'uid': config.get(section='Firebase', option='FIREBASE_AUTH_UID')
+        'uid': config.get(section='Firebase', option='FIREBASE_AUTH_UID'),
+        'admin': True
     }
 }
 
@@ -24,7 +25,7 @@ def get_db():
     try:
         # Initialize Firebase with credentials path
         db = FirebaseDBHelper(
-            credentials_path=config.get(section='Firebase', option='GOOGLE_SERVICES_JSON'),
+            credentials_path=config.get(section='Firebase', option='ADMIN_SDK_DEV'),
             options=options
         )
         return db

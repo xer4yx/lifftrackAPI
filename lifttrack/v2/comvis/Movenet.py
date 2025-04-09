@@ -38,13 +38,34 @@ class MovenetInference:
 
     def draw_keypoints_on_frame(self, frame, keypoints):
         for name, (x, y, confidence) in keypoints.items():
-            if confidence > 0.5:  # Only draw if confidence is above 0.5
+            if confidence > 0.1:  # Only draw if confidence is above 0.5
                 # Draw keypoint as a small circle
                 cv2.circle(frame, (x, y), 4, (0, 255, 0), -1)  # Green dot
                 # Optionally, add text label
                 cv2.putText(frame, name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 0, 0), 1)
 
         return frame
+    
+    def get_predictions(self, frame):
+        keypoints = {}
+        h, w, c = frame.shape
+        
+        # Resize the frame using your resize function
+        resized_frame = resize_to_192x192(frame)
+
+        # Prepare the image for MoveNet (add batch dimension and resize with padding)
+        img = tf.image.resize_with_pad(tf.expand_dims(resized_frame, axis=0), 192, 192)
+        input_img = tf.cast(img, dtype=tf.int32)
+        
+        pose_est = self.__movenet(input_img)["output_0"].numpy()[0, 0, :, :3]
+        
+        for name, index in KEYPOINT_DICT.items():
+            y, x, confidence = pose_est[index]
+            keypoints[name] = (int(x * w), int(y * h), float(confidence))
+            
+        return keypoints
+            
+        
 
     def analyze_frame(self, frame):
         # Resize the frame using your resize function

@@ -117,6 +117,20 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
+def validate_token(token: str, username: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("sub") != username:
+            return False
+        return True
+    except JWTError as e:
+        logger.error(f"JWT decoding error: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Error validating token: {str(e)}")
+        return False
+
+
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

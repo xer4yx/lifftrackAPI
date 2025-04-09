@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class RTDBHelper:
     def __init__(self, dsn=None, authentication=None, pool_size=10):
-        self.__dsn = config.get(section='Firebase', option='RTDB_DSN') or dsn
+        self.__dsn = config.get(section='Firebase', option='FIREBASE_DEV_DB') or dsn
         self.__auth = config.get(section='Firebase', option='RTDB_AUTH') or authentication
         self.__pool_size = pool_size
         self.__session = None
