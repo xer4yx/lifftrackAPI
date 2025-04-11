@@ -265,3 +265,43 @@ class RTDBHelper:
         except Exception as e:
             logger.exception(f"Exception in delete_progress for user {username}: {e}")
             raise
+
+    @_with_session
+    async def get_app_config(self, session: aiohttp.ClientSession, version: str) -> dict:
+        """Get the app configuration from the database."""
+        try:
+            # Form the proper URL to get app config
+            url = f"{self.__dsn}/app_config.json"
+            if self.__auth:
+                url += f"?auth={self.__auth}"
+                
+            async with session.get(url) as response:
+                if response.status == 200:
+                    app_config = await response.json()
+                    if not app_config:
+                        logger.warning("App configuration is empty")
+                        return {
+                            "latest_version": version,
+                            "update_message": "",
+                            "download_url": "",
+                            "login_message": ""
+                        }
+                    return app_config
+                else:
+                    logger.error(f"Failed to get app config: {response.status}")
+                    # Return default config instead of raising exception
+                    return {
+                        "latest_version": version,
+                        "update_message": "",
+                        "download_url": "",
+                        "login_message": ""
+                    }
+        except Exception as e:
+            logger.exception(f"Exception in get_app_config: {e}")
+            # Return default config on error
+            return {
+                "latest_version": version,
+                "update_message": "",
+                "download_url": "",
+                "login_message": ""
+            }

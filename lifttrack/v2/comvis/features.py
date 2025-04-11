@@ -376,3 +376,71 @@ def visualize_angles(frame, keypoints, angles, confidence_threshold=0.3):
                            0.5, (255, 255, 0), 1)
                 
     return annotated_frame
+
+
+def detect_resting_state(keypoints, features):
+    """
+    Detect if the user is in a resting state (standing or sitting).
+    
+    Args:
+    - keypoints: Dictionary of keypoints with positions {key: (x, y, score)}
+    - features: Dictionary containing detected features including 'objects'
+    
+    Returns:
+    - dict: Dictionary containing resting state information
+        {
+            'is_resting': bool,
+            'position': str ('standing', 'sitting', 'unknown'),
+            'confidence': float
+        }
+    """
+    result = {
+        'is_resting': False,
+        'position': 'unknown',
+        'confidence': 0.0
+    }
+    
+    # Check if there are any objects detected
+    objects = features.get('objects', {})
+    if not objects:
+        result['is_resting'] = True
+        result['confidence'] = 0.9
+        return result
+
+    # Get relevant joint angles
+    angles = features.get('joint_angles', {})
+    
+    # Get stability measure
+    stability = features.get('stability', 0)
+    
+    # Check for sitting position
+    hip_knee_ankle_left = angles.get('left_hip_left_knee_left_ankle', 180)
+    hip_knee_ankle_right = angles.get('right_hip_right_knee_right_ankle', 180)
+    
+    # Typical sitting angle ranges from 70-110 degrees at knee
+    is_sitting = (
+        (hip_knee_ankle_left and 70 <= hip_knee_ankle_left <= 110) or
+        (hip_knee_ankle_right and 70 <= hip_knee_ankle_right <= 110)
+    )
+    
+    # Check for standing position - look for straighter legs
+    is_standing = (
+        (hip_knee_ankle_left and 160 <= hip_knee_ankle_left <= 180) or
+        (hip_knee_ankle_right and 160 <= hip_knee_ankle_right <= 180)
+    )
+    
+    # High stability indicates less movement
+    is_stable = stability < 5.0  # Low displacement indicates stillness
+    
+    if is_stable:
+        result['is_resting'] = True
+        result['confidence'] = 0.8
+        
+        if is_sitting:
+            result['position'] = 'sitting'
+            result['confidence'] = 0.9
+        elif is_standing:
+            result['position'] = 'standing'
+            result['confidence'] = 0.9
+    
+    return result

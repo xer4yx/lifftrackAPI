@@ -208,8 +208,6 @@ def create_yuv420_frame(y_plane_bytes, u_plane_bytes, v_plane_bytes, width, heig
         
         try:
             if 0.49 <= uv_ratio <= 0.51:
-                logger.info("Detected YUV422-like format")
-                
                 # Calculate dimensions for U and V planes
                 uv_width = width // 2
                 uv_height = height // 2

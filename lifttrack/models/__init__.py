@@ -11,7 +11,16 @@ class AppInfo(BaseModel):
     app_name: str = "LiftTrack"
     version: str = "1.0.0"
     description: str = "An app to track your lifts and provide feedback on your form."
-    
+
+
+class AppUpdate(BaseModel):
+    current_version: str
+    latest_version: str
+    update_available: bool
+    update_message: str
+    download_url: str
+    login_message: str
+
 __all__ = [
     "AppInfo",
     "ExerciseData",

@@ -172,9 +172,6 @@ async def track_exercise(
                 # Calculate the current second based on frame count
                 current_second = frame_count // 30
                 
-                # Log successful processing
-                logger.info(f"Processed frame {frame_count} (second {current_second})")
-                
                 # Check if we need to save this second and haven't saved it yet
                 if frame_count % 30 == 0 and current_second not in saved_seconds:
                     # Mark this second as saved
