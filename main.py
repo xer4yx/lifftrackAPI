@@ -5,7 +5,8 @@ from fastapi import (
     HTTPException, 
     status,
     Request,
-    Response
+    Response,
+    Query
 )
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +22,7 @@ from lifttrack import timedelta, threading, network_logger
 from lifttrack.utils.logging_config import log_network_io, setup_logger
 from lifttrack.utils.syslogger import log_cpu_and_mem_usage, start_resource_monitoring
 from lifttrack.dbhandler.rest_rtdb import RTDBHelper
-from lifttrack.models import User, Token, AppInfo, LoginForm
+from lifttrack.models import User, Token, AppInfo, LoginForm, AppUpdate
 from lifttrack.auth import (
     create_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -140,6 +141,59 @@ async def get_app_info(request: Request, response: Response, appinfo: AppInfo):
         return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
+        )
+
+
+@app.get("/app-update")
+@limiter.limit("20/minute")
+async def get_app_update(request: Request, response: Response, current_version: str = Query(...)):
+    """Endpoint to check for app updates and get login messages."""
+    try:
+        # Get the latest version and messages from Firebase
+        async with HTTPConnectionPool.get_session() as session:
+            async with RTDBHelper(session) as rtdb:
+                app_config = await rtdb.get_app_config(current_version)
+                
+                # Create AppUpdate response
+                app_update = AppUpdate(
+                    current_version=current_version,
+                    latest_version=app_config.get("latest_version", current_version),
+                    update_available=app_config.get("latest_version", current_version) != current_version,
+                    update_message=app_config.get("update_message", ""),
+                    download_url=app_config.get("download_url", ""),
+                    login_message=app_config.get("login_message", "")
+                )
+
+                return JSONResponse(
+                    content=jsonable_encoder(app_update),
+                    status_code=status.HTTP_200_OK
+                )
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
+        )
+    except Exception as e:
+        logger.exception(f"Error in get_app_update: {e}")
+        # Return default information if there's an error
+        app_update = AppUpdate(
+            current_version=current_version,
+            latest_version=current_version,
+            update_available=False,
+            update_message="",
+            download_url="",
+            login_message=""
+        )
+        return JSONResponse(
+            content=jsonable_encoder(app_update),
+            status_code=status.HTTP_200_OK
         )
     finally:
         log_network_io(
@@ -320,6 +374,26 @@ async def read_users_me(request: Request, response: Response, current_user: User
         return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    finally:
+        log_network_io(
+            logger=network_logger, 
+            endpoint=request.url, 
+            method=request.method, 
+            response_status=response.status_code
+        )
+        
+        
+@app.get("/ping")
+@limiter.limit("10/minute")
+async def ping(request: Request, response: Response):
+    """Endpoint to check if the server is alive."""
+    try:
+        return JSONResponse(content={"status": "ok"}, status_code=status.HTTP_200_OK)
+    except HTTPException as httpe:
+        return JSONResponse(
+            content={"msg": httpe.detail},
+            status_code=httpe.status_code
         )
     finally:
         log_network_io(

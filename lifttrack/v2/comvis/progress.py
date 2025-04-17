@@ -4,7 +4,7 @@ import numpy as np
 from lifttrack.utils.logging_config import setup_logger
 from .features import (calculate_angle, extract_joint_angles, extract_movement_patterns,
                       calculate_speed, extract_body_alignment, calculate_stability,
-                      detect_form_issues)
+                      detect_form_issues, detect_resting_state)
 
 logger = setup_logger("progress-v2", "comvis.log")
 
@@ -47,7 +47,7 @@ def check_bench_press_form(features, predicted_class_name):
     vertical_alignment = float(body_alignment.get('0', 0))
     if vertical_alignment > 20:  # More than 20 degrees from vertical
         accuracy -= 0.15
-        suggestions.append("Don’t over-arch; lower back stays on the bench.")
+        suggestions.append("Don't over-arch; lower back stays on the bench.")
     
     # Equipment-specific checks with improved feature detection
     if "barbell" in equipment_type:
@@ -185,6 +185,12 @@ def calculate_form_accuracy(features, predicted_class_name):
     """Main function to calculate form accuracy using enhanced feature detection."""
     print(f"Features: {features}")
     try:
+        # First check if user is resting
+        resting_state = detect_resting_state(features.get('keypoints', {}), features)
+        if resting_state['is_resting']:
+            logger.info(f"User is resting - Position: {resting_state['position']}")
+            return 0.0, ["Idling"]
+            
         # Normalize exercise name to handle different formats
         predicted_class_name = predicted_class_name.lower().replace(" ", "_")
         
