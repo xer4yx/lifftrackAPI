@@ -2,6 +2,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 
+from infrastructure.database import FirebaseAdmin
+from infrastructure.di import get_firebase_admin
+
 from lifttrack.models import User
 from lifttrack.auth import get_password_hash
 from lifttrack.v2.dbhelper import get_db, FirebaseDBHelper
@@ -14,7 +17,7 @@ router = APIRouter(
 
 
 @router.post("/users", response_model=User, status_code=status.HTTP_201_CREATED)
-async def create_user(user: User, db: FirebaseDBHelper = Depends(get_db)):
+async def create_user(user: User, db: FirebaseAdmin = Depends(get_firebase_admin)):
     """
         Create a new user in the Firebase database.
         
@@ -30,18 +33,13 @@ async def create_user(user: User, db: FirebaseDBHelper = Depends(get_db)):
         user_data['password'] = get_password_hash(user_data['password'])
         
         # Check for existing username using RTDB query
-        existing_data = db.query_data(
-            'users',
-            order_by='username',
-            start_at=user.username,
-            end_at=user.username
-        )
+        existing_data = await db.get_data(key=f"users/{user.username}")
         
         if existing_data:
             raise HTTPException(status_code=400, detail="Username already exists")
         
         # Add user to Firebase RTDB
-        user_id = db.set_data(path='users', data=user_data, key=user_data['username'])
+        user_id = await db.set_data(key=f"users/{user.username}", value=user_data)
         user_data['id'] = user_id
         
         return JSONResponse(content=user_data)
@@ -113,7 +111,7 @@ async def list_users(
 async def update_user(
     user_id: str, 
     update_data: User, 
-    db: FirebaseDBHelper = Depends(get_db)):
+    db: FirebaseAdmin = Depends(get_firebase_admin)):
     """
     Update an existing user's information.
     
@@ -127,15 +125,17 @@ async def update_user(
     """
     try:
         # Check if user exists
-        existing_user = db.get_data('users', user_id)
+        existing_user = await db.get_data(key=f"users/{user_id}")
         if not existing_user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
             
-        # Convert Pydantic model to dict, removing None values
-        update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
+        
         
         # Perform update
-        success = db.update_data('users', user_id, update_dict)
+        success =await db.set_data(
+            key=f"users/{user_id}", 
+            value=update_data.model_dump(exclude_none=True)
+        )
         
         if not success:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to update user")
@@ -148,7 +148,7 @@ async def update_user(
 
 
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: str, db: FirebaseDBHelper = Depends(get_db)):
+async def delete_user(user_id: str, db: FirebaseAdmin = Depends(get_firebase_admin)):
     """
     Delete a user from the database.
     
@@ -161,12 +161,12 @@ async def delete_user(user_id: str, db: FirebaseDBHelper = Depends(get_db)):
     """
     try:
         # Check if user exists
-        existing_user = db.get_data('users', user_id)
+        existing_user = await db.get_data(key=f"users/{user_id}")
         if not existing_user:
             raise HTTPException(status_code=404, detail="User not found")
             
         # Perform deletion
-        success = db.delete_data('users', user_id)
+        success = await db.delete_data(key=f"users/{user_id}")
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to delete user")

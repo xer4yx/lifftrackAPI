@@ -39,8 +39,16 @@ from routers.InferenceRouter import router as inference_router
 from routers.v2.UsersRouter import router as v2_users_router
 from routers.v2.WebsocketRouter import router as v2_websocket_router
 
-# Initialize FastAPI app
-app = FastAPI()
+from utils.app_settings import AppSettings
+from utils.cors_settings import CorsSettings
+
+from infrastructure.database import FirebaseREST
+from infrastructure.di import get_firebase_rest
+
+app_settings = AppSettings()
+cors_settings = CorsSettings()
+
+app = FastAPI(title=app_settings.name, version=app_settings.version)
 
 # v1 API Routers
 app.include_router(users_router)
@@ -55,19 +63,14 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS Configuration
-server_origin = ["*"]
-server_method = ["PUT", "GET", "DELETE", "POST"]
-server_header = ["*"]
-
 # Modify CORS middleware to include additional security headers
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=server_origin,
-    allow_methods=server_method,
-    allow_headers=server_header,
-    allow_credentials=True,  # Added for secure cookie handling
-    expose_headers=["*"]
+    allow_origins=cors_settings.allowed_origins,
+    allow_methods=cors_settings.allowed_methods,
+    allow_headers=cors_settings.allowed_headers,
+    allow_credentials=cors_settings.allow_credentials,
+    expose_headers=cors_settings.expose_headers
 )
 # Add SlowAPI middleware
 app.add_middleware(SlowAPIMiddleware)
@@ -207,7 +210,7 @@ async def get_app_update(request: Request, response: Response, current_version: 
 # API Endpoint [Authentication Operations]
 @app.post("/login")
 @limiter.limit("3/minute")  # Limit login attempts
-async def login(login_form: LoginForm, request: Request, response: Response):
+async def login(login_form: LoginForm, request: Request, response: Response, db: FirebaseREST = Depends(get_firebase_rest)):
     """
     API endpoint for user login.
 
@@ -216,26 +219,24 @@ async def login(login_form: LoginForm, request: Request, response: Response):
         request: FastAPI Request object.
     """
     try:
-        async with HTTPConnectionPool.get_session() as session:
-            async with RTDBHelper(session) as rtdb:
-                user_data = await rtdb.get_data(login_form.username)
+        user_data = await db.get_data(key=f"users/{login_form.username}")
 
-                if user_data is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="User not found"
-                    )
+        if user_data is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
 
-                if not verify_password(login_form.password, user_data.get("password", "")):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid username or password"
-                    )
+        if not verify_password(login_form.password, user_data.get("password", "")):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username or password"
+            )
 
-                return JSONResponse(
-                    content={"message": "Login successful", "success": True},
-                    status_code=status.HTTP_200_OK
-                )
+        return JSONResponse(
+            content={"message": "Login successful", "success": True},
+            status_code=status.HTTP_200_OK
+        )
     except HTTPException as httpe:
         return JSONResponse(
             content={"msg": httpe.detail},
@@ -328,11 +329,6 @@ async def logout(request: Request, response: Response):
             content={"msg": "Successfully logged out"},
             status_code=status.HTTP_200_OK
         )
-    except HTTPException as httpe:
-        return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
-        )
     except Exception as e:
         logger.exception(f"Error in logout: {e}")
         return JSONResponse(
@@ -361,13 +357,8 @@ async def read_users_me(request: Request, response: Response, current_user: User
     """
     try:
         return JSONResponse(
-            content=jsonable_encoder(current_user),
+            content=current_user.model_dump(),
             status_code=status.HTTP_200_OK
-        )
-    except HTTPException as httpe:
-        return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
         )
     except Exception as e:
         logger.exception(f"Error in read_users_me: {e}")
@@ -402,3 +393,4 @@ async def ping(request: Request, response: Response):
             method=request.method, 
             response_status=response.status_code
         )
+     

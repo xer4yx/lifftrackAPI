@@ -3,7 +3,7 @@ import uuid
 from pydantic import ValidationError
 
 from fastapi import APIRouter, Request, Response, Depends, HTTPException, status
-from fastapi.params import Body
+from fastapi.params import Body, Query
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 
@@ -22,6 +22,9 @@ from lifttrack.models import User
 from lifttrack.dbhandler.rest_rtdb import RTDBHelper
 from lifttrack.utils.logging_config import setup_logger, log_network_io
 from .manager import HTTPConnectionPool
+
+from infrastructure.database import FirebaseREST
+from infrastructure.di import get_firebase_rest
 
 router = APIRouter(
     prefix="/user",
@@ -45,8 +48,8 @@ async def create_user(
                 "phone_number": "09123456789",
                 "password": str(uuid.uuid4().hex)
             }
-        )
-    ):
+        ),
+    db: FirebaseREST = Depends(get_firebase_rest)):
     """
     Endpoint to create a new user in the Firebase Realtime Database.
 
@@ -55,19 +58,20 @@ async def create_user(
         request: FastAPI Request object.
     """
     try:
-        async with HTTPConnectionPool.get_session() as session:
-            async with RTDBHelper(session) as rtdb:
-                user.password = get_password_hash(user.password)
-                await rtdb.put_data(user_data=jsonable_encoder(user))
-                add_to_username_cache(user.username)
+        user.password = get_password_hash(user.password)
+        await db.set_data(key=f"users/{user.username}", value=jsonable_encoder(user, exclude_none=True))
+        add_to_username_cache(user.username)
 
-                return JSONResponse(
-                    content={"msg": "User created."},
-                    status_code=status.HTTP_201_CREATED
-                )
+        return JSONResponse(
+            content={"msg": "User created."},
+            status_code=status.HTTP_201_CREATED
+        )
     except ValidationError as vale:
         return JSONResponse(
-            content={"msg": str(vale)},
+            content={
+                "msg": "Error in validating data.",
+                "detail": vale.errors(include_url=False, include_input=False)
+            },
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
         )
     except ValueError as ve:
@@ -89,7 +93,7 @@ async def create_user(
     finally:
         log_network_io(
             logger=network_logger, 
-            endpoint=request.url, 
+            endpoint=request.url,
             method=request.method, 
             response_status=response.status_code
         )
@@ -101,7 +105,8 @@ async def get_user_data(
     request: Request, 
     response: Response,
     username: str, 
-    data: Optional[str] = None):
+    data: Optional[str] = None,
+    db: FirebaseREST = Depends(get_firebase_rest)):
     """
     Endpoint to get user data from the Firebase Realtime Database.
 
@@ -111,20 +116,21 @@ async def get_user_data(
         request: FastAPI Request object.
     """
     try:
-        async with HTTPConnectionPool.get_session() as session:
-            async with RTDBHelper(session) as rtdb:
-                user_data = await rtdb.get_data(username, data)
+        key = f"users/{username}"
+        if data:
+            key += f"/{data}"
+        user_data = await db.get_data(key=key)
 
-                if user_data is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="User not found."
-                    )
+        if user_data is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found."
+            )
 
-                return JSONResponse(
-                    content=user_data,
-                    status_code=status.HTTP_200_OK
-                )
+        return JSONResponse(
+            content=user_data,
+            status_code=status.HTTP_200_OK
+        )
     except HTTPException as httpe:
         return JSONResponse(
             content={"msg": httpe.detail},
@@ -153,8 +159,8 @@ async def update_user_data(
     username: str, 
     request: Request,
     response: Response,
-    update_data: tuple[User, bool] = Depends(check_password_update)
-    ):
+    update_data: tuple[User, bool] = Depends(check_password_update),
+    db: FirebaseREST = Depends(get_firebase_rest)):
     """
     Endpoint to update user data in the database.
 
@@ -164,25 +170,23 @@ async def update_user_data(
         request: FastAPI Request object.
     """
     try:
-        async with HTTPConnectionPool.get_session() as session:
-            async with RTDBHelper(session) as rtdb:
-                user, is_password_update = update_data
-                
-                if is_password_update:
-                    user.password = get_password_hash(user.password)
+        user, is_password_update = update_data
+        
+        if is_password_update:
+            user.password = get_password_hash(user.password)
 
-                snapshot = await rtdb.update_data(username, user.model_dump())
+        snapshot = await db.set_data(key=f"users/{username}", value=jsonable_encoder(user, exclude_none=True))
 
-                if not snapshot:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="User update failed."
-                    )
+        if not snapshot:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User update failed."
+            )
 
-                return JSONResponse(
-                    content={"msg": "User updated."},
-                    status_code=status.HTTP_200_OK
-                )
+        return JSONResponse(
+            content={"msg": "User updated."},
+            status_code=status.HTTP_200_OK
+        )
     except HTTPException as httpe:
         return JSONResponse(
             content={"msg": httpe.detail},
@@ -206,7 +210,7 @@ async def update_user_data(
 
 @router.put("/user/{username}/change-pass")
 @limiter.limit("5/minute")
-async def change_password(user: User, request: Request, response: Response):
+async def change_password(user: User, request: Request, response: Response, current_password: str = Query(..., description="Current password of the user")):
     """
     Endpoint to change user password.
 
@@ -218,9 +222,9 @@ async def change_password(user: User, request: Request, response: Response):
     try:
         async with HTTPConnectionPool.get_session() as session:
             async with RTDBHelper(session) as rtdb:
-                hashed_pass = await rtdb.get_data(user.username, "password")
+                hashed_pass = await rtdb.get_data(username=user.username, data="password")
 
-                if not hashed_pass or not verify_password(user.password, hashed_pass):
+                if not hashed_pass or not verify_password(current_password, hashed_pass):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Incorrect password."
@@ -228,7 +232,7 @@ async def change_password(user: User, request: Request, response: Response):
                 
                 user.password = get_password_hash(user.password)
 
-                snapshot = rtdb.update_data(user.username, jsonable_encoder(user))
+                snapshot = await rtdb.update_data(user.username, user.model_dump(exclude_none=True))
                 if not snapshot:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -262,7 +266,11 @@ async def change_password(user: User, request: Request, response: Response):
 
 @router.delete("/user/{username}")
 @limiter.limit("5/minute")
-async def delete_user(username: str, request: Request, response: Response):
+async def delete_user(
+    username: str, 
+    request: Request, 
+    response: Response,
+    db: FirebaseREST = Depends(get_firebase_rest)):
     """
     Endpoint to delete a user from the Firebase Realtime Database.
 
@@ -271,21 +279,19 @@ async def delete_user(username: str, request: Request, response: Response):
         request: FastAPI Request object.
     """
     try:
-        async with HTTPConnectionPool.get_session() as session:
-            async with RTDBHelper(session) as rtdb:
-                deleted = await rtdb.delete_data(username)
-                if not deleted:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="User deletion failed."
-                    )
-                    
-                remove_from_username_cache(username)
+        deleted = await db.delete_data(key=f"users/{username}")
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User deletion failed."
+            )
+            
+        remove_from_username_cache(username)
 
-                return JSONResponse(
-                    content={"msg": "User deleted."},
-                    status_code=status.HTTP_200_OK
-                )
+        return JSONResponse(
+            content={"msg": "User deleted."},
+            status_code=status.HTTP_200_OK
+        )
     except HTTPException as httpe:
         return JSONResponse(
             content={"msg": httpe.detail},

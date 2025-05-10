@@ -12,6 +12,9 @@ from lifttrack.dbhandler.rest_rtdb import RTDBHelper
 from lifttrack.utils.logging_config import setup_logger, log_network_io
 from .manager import HTTPConnectionPool
 
+from infrastructure.database import FirebaseREST
+from infrastructure.di import get_firebase_rest
+
 # Configure logging
 logger = setup_logger("progress_routes", "router.log")
 
@@ -94,15 +97,24 @@ async def get_progress(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot access other user's progress"
             )
+            
+        # Use HTTPConnectionPool directly instead of db dependency
         async with HTTPConnectionPool.get_session() as session:
             async with RTDBHelper(session) as rtdb:
-                progress = await rtdb.get_progress(username, exercise)
-                if progress is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Progress data not found"
-                    )
+                # Construct the key based on whether exercise is provided
+                key = f"progress/{username}"
+                if exercise:
+                    key += f"/{exercise}"
                     
+                progress = await rtdb.get_progress(username, exercise)
+                
+                # Handle case when progress data is not found
+                if progress is None:
+                    return JSONResponse(
+                        content={},  # Return empty object instead of null
+                        status_code=status.HTTP_200_OK
+                    )
+                
                 return JSONResponse(
                     content=progress,
                     status_code=status.HTTP_200_OK
