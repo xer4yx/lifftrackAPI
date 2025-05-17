@@ -9,7 +9,6 @@ from fastapi.encoders import jsonable_encoder
 from datetime import datetime
 
 from lifttrack.utils.logging_config import setup_logger
-from lifttrack.comvis import websocket_process_frames
 from lifttrack.v2.comvis.inference_handler import *
 from lifttrack.v2.dbhelper import get_db
 from lifttrack.v2.dbhelper.admin_rtdb import FirebaseDBHelper
@@ -83,64 +82,6 @@ async def run_analysis_in_thread(frames_buffer, username, exercise_name, db_exer
     except Exception as e:
         logger.error(f"Analysis thread error: {str(e)}")
         return None
-    
-
-# API Endpoint [Frame Operations]
-@router.websocket("/ws-tracking")  # Mobile version
-async def websocket_inference(websocket: WebSocket):
-    """
-    Endpoint for the WebSocket video feed. The server receives frames from the client that's formatted as a base64
-    bytes. The server decodes the frame in a thread pool, processes the frame to get inference and annotations, and
-    encodes it back to the client as bytes back.
-
-    Args:
-        websocket: WebSocket object.
-    """
-    await websocket.accept()
-    connection_open = True
-    model = None
-    while connection_open:
-        try:
-            # Expected format from client side is:
-            # {"type": "websocket.receive", "text": data}
-            frame_data = await websocket.receive()
-
-            if frame_data["type"] == "websocket.close":
-                connection_open = False
-                break
-
-            frame_byte = frame_data.get("bytes")
-
-            if not isinstance(frame_byte, bytes):
-                await websocket.close()
-                break
-
-            # Process frame in thread pool to avoid blocking
-            (annotated_frame, features) = await asyncio.get_event_loop().run_in_executor(
-                thread_pool, websocket_process_frames, model, frame_byte
-            )
-
-            # Encode and send result - use lower quality for faster encoding
-            encode_params = [cv2.IMWRITE_JPEG_QUALITY, 80]  # Lower quality for faster transfer
-            encoded, buffer = cv2.imencode(".jpeg", annotated_frame, encode_params)
-
-            if not encoded:
-                raise WebSocketDisconnect
-
-            return_bytes = base64.b64decode(buffer.tobytes())
-
-            # Expected return to the client side is:
-            # {"type": "websocket.send", "bytes": data}
-            await websocket.send_bytes(return_bytes)
-        except WebSocketDisconnect:
-            connection_open = False
-        except Exception as e:
-            logger.exception(f"WebSocket error: {e}")
-            connection_open = False
-        finally:
-            if not connection_open:
-                await websocket.close()
-
 
 @router.websocket("/v2/ws-tracking")
 async def websocket_endpoint(

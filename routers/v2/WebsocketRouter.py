@@ -121,7 +121,7 @@ async def track_exercise(
             # Use exact second number for the time frame key
             time_frame = f"second_{second_number}"
             
-            # Database operations
+            # Database operations - continue even if websocket is closed
             await loop.run_in_executor(
                 thread_pool,
                 partial(
@@ -136,8 +136,13 @@ async def track_exercise(
             )
             logger.info(f"Saved analysis for {time_frame} at frame {current_frame_count}")
             
-            # Send message to client
-            await websocket.send_json({'suggestions': suggestions, 'accuracy': str(accuracy)})
+            # Only send message to client if connection is still active
+            if connection_active and websocket.client_state.name == "CONNECTED":
+                try:
+                    await websocket.send_json({'suggestions': suggestions, 'accuracy': str(accuracy)})
+                except RuntimeError as e:
+                    logger.warning(f"Could not send analysis results: {str(e)}")
+                    # Don't raise the exception, just log it
             
             return suggestions, accuracy
         except Exception as e:
@@ -194,11 +199,16 @@ async def track_exercise(
                     analysis_task.add_done_callback(task_done_callback)
                 
                 # Return feedback to client about frame processing
-                await websocket.send_json({
-                    'status': 'processing',
-                    'frame_count': frame_count,
-                    'current_second': current_second
-                })
+                try:
+                    await websocket.send_json({
+                        'status': 'processing',
+                        'frame_count': frame_count,
+                        'current_second': current_second
+                    })
+                except RuntimeError as e:
+                    logger.warning(f"Could not send processing status: {str(e)}")
+                    connection_active = False
+                    break
             
             # Short yield to allow other tasks to run
             await asyncio.sleep(0.001)
@@ -211,10 +221,19 @@ async def track_exercise(
         logger.error(f"Error in websocket handler: {str(e)}")
         connection_active = False
     finally:
-        # Wait for pending analyses to complete before closing
+        # Mark connection as inactive to prevent new messages
+        connection_active = False
+        
+        # Wait for pending analyses to complete but don't send messages
         if pending_analyses:
             try:
-                await asyncio.wait(pending_analyses, timeout=5.0)  # Increased timeout for better completion chance
+                # Set a timeout to prevent hanging forever
+                done, pending = await asyncio.wait(pending_analyses, timeout=3.0)
+                
+                # Log any incomplete tasks
+                if pending:
+                    logger.warning(f"{len(pending)} analysis tasks did not complete in time")
             except Exception as e:
                 logger.error(f"Error waiting for pending analyses: {str(e)}")
+        
         frames_buffer.clear()
