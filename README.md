@@ -2,90 +2,88 @@
 
 ![Logo](logo.jpg)
 
-LiftTrack API is a robust backend service designed for fitness enthusiasts and strength athletes who want to track their weightlifting progress. This API provides a comprehensive solution for managing workout data, including exercises, sets, reps, and personal records.
+**Version:** `v1.10.4` *(Auto-loaded from `version.py`)*
 
-## Overview
+LiftTrack API is a powerful backend service designed for fitness enthusiasts and strength athletes to effectively track their weightlifting progress. It provides endpoints to manage workouts, exercises, performance logs, and personal records with modern best practices and robust security features.
 
-This API enables users to:
+---
 
-- Track workout sessions and exercise performance
-- Record and monitor personal records
-- Manage exercise libraries and custom workouts
-- Store and analyze lifting progress over time
+## 🚀 Features
 
-Perfect for fitness applications, personal trainers, and individuals serious about their strength training journey. Built with modern best practices and secure authentication to protect user data.
+### 👤 User Management
+- Secure user registration and login
+- Profile management
+- User data management support
 
-## Features
+### 🏋️ Weightlifting Management
+- CRUD and WebSocket operations for weightlifting
+- Log dates, durations, and weightlifting data
+- Workout categorization (e.g., Upper Body, Lower Body)
 
-### User Management
+### 📝 Exercise Tracking
+- Record suggestions, and body angles
+- Track rest periods and variations
+- Detailed logging for each workout
 
-- User registration and authentication
-- Secure login
-- User profile management
-- Password reset functionality
+### 📈 Progress Monitoring
+- View historical performance data
 
-### Workout Management
+### 🔐 Security
+- Token-based authentication
+- Encrypted passwords
+- Protected API routes
+- Secure user data storage
 
-- Create, read, update, and delete workouts
-- Track workout dates and durations
-- Add notes to workout sessions
-- Categorize workouts by type (e.g., strength, cardio)
+---
 
-### Exercise Tracking
+## 🛠️ Getting Started (Development)
 
-- Log individual exercises within workouts
-- Record sets, reps, and weights
-- Track rest periods between sets
-- Note exercise variations and modifications
-
-### Progress Monitoring
-
-- Track personal records (PRs)
-- View historical workout data
-- Monitor progress over time
-- Calculate one-rep max (1RM)
-
-### Data Management
-
-- Store exercise library
-- Custom exercise creation
-- Workout templates
-- Exercise categorization
-
-### Security Features
-
-- Token based authentication
-- Password encryption
-- Protected routes
-- Secure data storage
-
-## Run Locally
-
-Clone the project
+### 1. Clone the Repository
 
 ```bash
-  git clone https://github.com/xer4yx/lifftrackAPI
+git clone https://github.com/xer4yx/lifttrackAPI
+cd lifttrackAPI
 ```
 
-Go to the project directory
+### 2. Install Dependencies
 
 ```bash
-  cd lifttrackAPI
+pip install -r requirements.txt
 ```
 
-Install dependencies
+### 3. Start the Development Server
 
 ```bash
-  pip install -r requirements.txt
+uvicorn main:app --host 127.0.0.1 --port 8080
 ```
 
-Start the server
+---
 
-```bash
-  uvicorn main:app --host 127.0.0.1 --port 8080
-```
+## 👥 Contributing
+
+We welcome contributions from the community! To contribute:
+
+1. Fork the repository
+
+2. Create your feature branch (git checkout -b feature/awesome-feature)
+
+3. Commit your changes (git commit -m 'Add awesome feature')
+
+4. Push to the branch (git push origin feature/awesome-feature)
+
+5. Open a Pull Request
+
+Please follow our coding standards and write tests for any new features or bug fixes.
+
+---
 
 ## Authors
 
 - [@xer4yx](https://www.github.com/xer4yx)
 - [@Twenty-2020](https://www.github.com/Twenty-2020)
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
