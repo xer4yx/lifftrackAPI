@@ -1,6 +1,7 @@
 *.ini
 *.yml
 ./idea
+!.github/**
 
 __pycache__/
 

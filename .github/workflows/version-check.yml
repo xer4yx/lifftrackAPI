@@ -1,0 +1,106 @@
+name: Version Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  version-check:
+    name: Check Version Before Bump
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for all branches and tags
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest
+      
+      - name: Run tests
+        run: |
+          pytest
+      
+      - name: Check version format and consistency
+        run: |
+          # Extract version from pyproject.toml
+          if [ -f pyproject.toml ]; then
+            PYPROJECT_VERSION=$(grep -o "version = ['\"][^'\"]*['\"]" pyproject.toml | head -1 | cut -d= -f2 | tr -d \'\" || echo "")
+            echo "Version in pyproject.toml: $PYPROJECT_VERSION"
+          else
+            echo "::warning::pyproject.toml not found"
+          fi
+          
+          # Extract version from version.py
+          if [ -f version.py ]; then
+            VERSION_PY_VERSION=$(grep -o "__version__ = ['\"][^'\"]*['\"]" version.py | cut -d= -f2 | tr -d \'\" || echo "")
+            echo "Version in version.py: $VERSION_PY_VERSION"
+          else
+            echo "::warning::version.py not found"
+          fi
+          
+          # Check if versions are present and match
+          if [ -n "$PYPROJECT_VERSION" ] && [ -n "$VERSION_PY_VERSION" ]; then
+            if [ "$PYPROJECT_VERSION" != "$VERSION_PY_VERSION" ]; then
+              echo "::error::Version mismatch: pyproject.toml ($PYPROJECT_VERSION) != version.py ($VERSION_PY_VERSION)"
+              exit 1
+            else
+              echo "Versions match across files: $PYPROJECT_VERSION"
+              CURRENT_VERSION=$PYPROJECT_VERSION
+            fi
+          elif [ -n "$PYPROJECT_VERSION" ]; then
+            CURRENT_VERSION=$PYPROJECT_VERSION
+          elif [ -n "$VERSION_PY_VERSION" ]; then
+            CURRENT_VERSION=$VERSION_PY_VERSION
+          else
+            echo "::error::Could not find version information"
+            exit 1
+          fi
+          
+          echo "Current version: $CURRENT_VERSION"
+          
+          # Validate version follows semantic versioning
+          if ! [[ $CURRENT_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::Version $CURRENT_VERSION does not follow semantic versioning"
+            exit 1
+          fi
+          
+          # Update README.md with current version
+          sed -i "s/v__VERSION__/v$CURRENT_VERSION/g" README.md
+      
+      - name: Check for version change
+        run: |
+          # This step checks if the version has been updated in the PR
+          # Get the files that were changed in this PR
+          git fetch origin main
+          
+          # Check if version-related files were modified
+          VERSION_FILES_CHANGED=$(git diff --name-only origin/main..HEAD | grep -E 'pyproject.toml|version.py' || true)
+          
+          if [ -z "$VERSION_FILES_CHANGED" ]; then
+            echo "No version-related files were changed in this PR."
+            echo "If you're making changes that require a version bump, please update the version."
+          else
+            echo "Detected changes in version-related files:"
+            echo "$VERSION_FILES_CHANGED"
+            
+            # Check if the version actually changed in pyproject.toml
+            if [ -f pyproject.toml ] && git diff origin/main..HEAD pyproject.toml | grep -q "version ="; then
+              echo "Version was updated in pyproject.toml"
+            # Check if the version actually changed in version.py
+            elif [ -f version.py ] && git diff origin/main..HEAD version.py | grep -q "__version__"; then
+              echo "Version was updated in version.py"
+            else
+              echo "::warning::Changes detected in version files but version number might not have been updated"
+            fi
+          fi 
