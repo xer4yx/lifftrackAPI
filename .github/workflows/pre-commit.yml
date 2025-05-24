@@ -1,69 +1,36 @@
 name: Pre-commit checks
 
 on:
-  push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 jobs:
-  update-readme-version:
+  pre-commit-checks:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+    - uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.x'
     
-    - name: Update README version
+    - name: Install dependencies
       run: |
-        cat > update_version.py << 'EOF'
-        import re
-
-        def update_readme_version():
-            # Get version from version.py
-            with open('version.py', 'r', encoding='utf-8') as f:
-                version_content = f.read()
-            
-            version_match = re.search(r'__version__\s*=\s*[\'"]([^\'"]*)[\'"]', version_content)
-            if not version_match:
-                print('Warning: Could not find version in version.py')
-                return
-            
-            version = version_match.group(1)
-            
-            # Update README.md
-            try:
-                with open('README.md', 'r', encoding='utf-8') as f:
-                    readme_content = f.read()
-            except UnicodeDecodeError:
-                with open('README.md', 'r', encoding='latin-1') as f:
-                    readme_content = f.read()
-            
-            updated_readme = re.sub(
-                r'(\*\*Version:\*\*\s*`)v[^`]*(`.*)',
-                f'\\1v{version}\\2',
-                readme_content
-            )
-            
-            with open('README.md', 'w', encoding='utf-8') as f:
-                f.write(updated_readme)
-            
-            print(f'Updated README.md with version v{version}')
-
-        update_readme_version()
-        EOF
-        python update_version.py
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install black pylint pytest
     
-    - name: Commit changes if any
+    - name: Code formatting check (Black)
       run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git add README.md
-        git diff --quiet && git diff --staged --quiet || git commit -m "docs: Update README.md version [skip ci]"
-        git push origin HEAD:${GITHUB_REF#refs/heads/} 
+        black --check --diff .
+    
+    - name: Linting check (Pylint)
+      run: |
+        find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" | xargs pylint --disable=C0114,C0115,C0116
+      continue-on-error: true
+    
+    - name: Run tests
+      run: |
+        pytest 
