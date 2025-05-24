@@ -3,10 +3,11 @@ import os
 from inference_sdk import InferenceHTTPClient
 
 from lifttrack import config
-from lifttrack.comvis.tensor import check_docker_container_status
 from lifttrack.utils.logging_config import setup_logger
 from .utils import resize_to_192x192
 from lifttrack.models import Object
+
+from utils import InferenceSdkSettings
 
 container_logger = setup_logger("docker-container", "container.log")
 comvis_logger = setup_logger("roboflow-v2", "comvis.log")
@@ -14,14 +15,15 @@ comvis_logger = setup_logger("roboflow-v2", "comvis.log")
 
 class ObjectTracker:
     def __init__(self) -> None:
+        inference_settings = InferenceSdkSettings()
         # Initialize the Roboflow Inference Client
         # check_docker_container_status(container_logger, config.get(section="Docker", option="CONTAINER_NAME"))
         self.__client = InferenceHTTPClient(
-            api_url="http://localhost:9001",  # URL for the Roboflow Inference Client
-            api_key="TiK2P0kPcpeVnssORWRV",  # Your API Key
+            api_url=inference_settings.api_url,  # URL for the Roboflow Inference Client
+            api_key=inference_settings.api_key,  # Your API Key
         )
-        self.__project_id = config.get(section="Roboflow", option="ROBOFLOW_PROJECT_ID")
-        self.__model_version = int(config.get(section="Roboflow", option="ROBOFLOW_MODEL_VER"))
+        self.__project_id = inference_settings.project_id
+        self.__model_version = inference_settings.model_version
         
     # Function to draw bounding boxes on the frame with scaling
     def draw_bounding_boxes(self, frame, predictions, original_size):

@@ -7,7 +7,6 @@ from infrastructure.di import get_firebase_admin
 
 from lifttrack.models import User
 from lifttrack.auth import get_password_hash
-from lifttrack.v2.dbhelper import get_db, FirebaseDBHelper
 
 router = APIRouter(
     prefix="/v2",
@@ -49,7 +48,7 @@ async def create_user(user: User, db: FirebaseAdmin = Depends(get_firebase_admin
 
 @router.get("/users", response_model=List[User], status_code=status.HTTP_200_OK)
 async def list_users(
-    db: FirebaseDBHelper = Depends(get_db),
+    db: FirebaseAdmin = Depends(get_firebase_admin),
     is_authenticated: Optional[bool] = False,
     is_deleted: Optional[bool] = False
 ):
@@ -66,10 +65,7 @@ async def list_users(
     """
     try:
         # Get all users first
-        users_data = db.query_data(
-            'users',
-            order_by='username'
-        )
+        users_data = await db.get_data(key=f"users")
         
         if not users_data:
             return []
@@ -77,7 +73,7 @@ async def list_users(
         # Convert to list if it's a dictionary
         if isinstance(users_data, dict):
             users_list = [
-                {'id': key, **value} 
+                {'username': key, **value} 
                 for key, value in users_data.items()
             ]
         else:

@@ -1,10 +1,13 @@
 import firebase_admin
 from firebase_admin import credentials, db
 
-from typing import Any, Dict, Optional, List, Callable
+from typing import Any, Dict, Optional, List
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
+from lifttrack.utils.logging_config import setup_logger
+
+logger = setup_logger("lifttrack.admin_rtdb", "db.log")
 
 class FirebaseDBHelper:
     """
@@ -53,7 +56,7 @@ class FirebaseDBHelper:
                         )
                         cls._instance._db = db.reference()
                     except Exception as e:
-                        print(f"Firebase initialization error: {e}")
+                        logger.error(f"Firebase initialization error: {e}")
                         raise
         
         return cls._instance
@@ -68,7 +71,11 @@ class FirebaseDBHelper:
         Returns:
             db.Reference: Reference to the specified location
         """
-        return self._db.child(path)
+        try:
+            return self._db.child(path)
+        except Exception as e:
+            logger.error(f"Error getting reference: {e}")
+            raise
     
     def set_data(self, path: str, data: Dict[str, Any], key: Optional[str] = None) -> str:
         """
@@ -90,7 +97,7 @@ class FirebaseDBHelper:
             else:
                 return ref.push(data).key
         except Exception as e:
-            print(f"Error adding data: {e}")
+            logger.error(f"Error adding data: {e}")
             raise
         
     def push_data(self, path: str, data: Dict[str, Any], key: Optional[str] = None) -> str:
@@ -113,7 +120,7 @@ class FirebaseDBHelper:
             else:
                 return ref.push(data).key
         except Exception as e:
-            print(f"Error adding data: {e}")
+            logger.error(f"Error adding data: {e}")
             raise
     
     def get_data(self, path: str, key: str) -> Optional[Dict[str, Any]]:
@@ -130,7 +137,7 @@ class FirebaseDBHelper:
         try:
             return self.get_reference(path).child(key).get()
         except Exception as e:
-            print(f"Error retrieving data: {e}")
+            logger.error(f"Error retrieving data: {e}")
             raise
     
     def update_data(self, path: str, key: str, update_data: Dict[str, Any]) -> bool:
@@ -146,7 +153,7 @@ class FirebaseDBHelper:
             self.get_reference(path).child(key).update(update_data)
             return True
         except Exception as e:
-            print(f"Error updating data: {e}")
+            logger.error(f"Error updating data: {e}")
             return False
     
     def delete_data(self, path: str, key: str) -> bool:
@@ -161,7 +168,7 @@ class FirebaseDBHelper:
             self.get_reference(path).child(key).delete()
             return True
         except Exception as e:
-            print(f"Error deleting data: {e}")
+            logger.error(f"Error deleting data: {e}")
             return False
     
     def query_data(self, path: str, 
@@ -196,7 +203,7 @@ class FirebaseDBHelper:
             
             return ref.get()
         except Exception as e:
-            print(f"Query error: {e}")
+            logger.error(f"Query error: {e}")
             return []
     
     def close(self):

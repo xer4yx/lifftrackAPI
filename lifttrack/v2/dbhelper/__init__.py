@@ -5,6 +5,7 @@ from lifttrack import config
 from .admin_rtdb import FirebaseDBHelper
 
 from fastapi import HTTPException
+from utils import FirebaseSettings
 
 __all__ = ['FirebaseDBHelper']
 load_dotenv('./.env')
@@ -16,6 +17,8 @@ options = {
     }
 }
 
+firebase_settings = FirebaseSettings()
+
 
 def get_db():
     """
@@ -25,8 +28,8 @@ def get_db():
     try:
         # Initialize Firebase with credentials path
         db = FirebaseDBHelper(
-            credentials_path=config.get(section='Firebase', option='ADMIN_SDK_DEV'),
-            options=options
+            credentials_path=firebase_settings.admin_sdk,
+            options=firebase_settings.options.model_dump()
         )
         return db
     except Exception as e:

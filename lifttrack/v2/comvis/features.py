@@ -1,6 +1,8 @@
 import numpy as np
 import math
 import cv2
+import concurrent.futures
+from typing import Tuple, Dict, Any
 
 
 # Function to compute the angle between three points
@@ -378,21 +380,21 @@ def visualize_angles(frame, keypoints, angles, confidence_threshold=0.3):
     return annotated_frame
 
 
-def detect_resting_state(keypoints, features):
+def detect_resting_state(keypoints: Dict[str, Tuple[float, float, float]], features: Dict[str, Any]) -> Dict[str, Any]:
     """
     Detect if the user is in a resting state (standing or sitting).
     
     Args:
-    - keypoints: Dictionary of keypoints with positions {key: (x, y, score)}
-    - features: Dictionary containing detected features including 'objects'
+        - keypoints: Dictionary of keypoints with positions {key: (x, y, score)} or {key: {'x': x, 'y': y, 'confidence': confidence}}
+        - features: Dictionary containing detected features including 'objects'
     
     Returns:
-    - dict: Dictionary containing resting state information
-        {
-            'is_resting': bool,
-            'position': str ('standing', 'sitting', 'unknown'),
-            'confidence': float
-        }
+        - dict: Dictionary containing resting state information
+            {
+                'is_resting': bool,
+                'position': str ('standing', 'sitting_floor', 'sitting_chair', 'unknown'),
+                'confidence': float
+            }
     """
     result = {
         'is_resting': False,
@@ -407,40 +409,125 @@ def detect_resting_state(keypoints, features):
         result['confidence'] = 0.9
         return result
 
-    # Get relevant joint angles
-    angles = features.get('joint_angles', {})
-    
     # Get stability measure
     stability = features.get('stability', 0)
     
-    # Check for sitting position
-    hip_knee_ankle_left = angles.get('left_hip_left_knee_left_ankle', 180)
-    hip_knee_ankle_right = angles.get('right_hip_right_knee_right_ankle', 180)
+    # Helper function to extract (x, y) from keypoint regardless of format
+    def get_keypoint_xy(keypoint_name, default=(0, 0)):
+        keypoint = keypoints.get(keypoint_name)
+        if keypoint is None:
+            return default
+        
+        # Handle dictionary format: {'x': x, 'y': y, 'confidence': confidence}
+        if isinstance(keypoint, dict):
+            return (keypoint.get('x', 0), keypoint.get('y', 0))
+        # Handle tuple format: (x, y, confidence)
+        elif isinstance(keypoint, (tuple, list)) and len(keypoint) >= 2:
+            return keypoint[:2]
+        else:
+            return default
     
-    # Typical sitting angle ranges from 70-110 degrees at knee
-    is_sitting = (
-        (hip_knee_ankle_left and 70 <= hip_knee_ankle_left <= 110) or
-        (hip_knee_ankle_right and 70 <= hip_knee_ankle_right <= 110)
+    # Calculate angles concurrently
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        # Define angle calculation tasks using the helper function
+        angle_tasks = {
+            'left_leg': executor.submit(
+                calculate_angle,
+                get_keypoint_xy('left_hip'),
+                get_keypoint_xy('left_knee'),
+                get_keypoint_xy('left_ankle')
+            ) if all(k in keypoints for k in ['left_hip', 'left_knee', 'left_ankle']) else None,
+            
+            'right_leg': executor.submit(
+                calculate_angle,
+                get_keypoint_xy('right_hip'),
+                get_keypoint_xy('right_knee'),
+                get_keypoint_xy('right_ankle')
+            ) if all(k in keypoints for k in ['right_hip', 'right_knee', 'right_ankle']) else None,
+            
+            'left_back': executor.submit(
+                calculate_angle,
+                get_keypoint_xy('left_shoulder'),
+                get_keypoint_xy('left_hip'),
+                get_keypoint_xy('left_knee')
+            ) if all(k in keypoints for k in ['left_shoulder', 'left_hip', 'left_knee']) else None,
+            
+            'right_back': executor.submit(
+                calculate_angle,
+                get_keypoint_xy('right_shoulder'),
+                get_keypoint_xy('right_hip'),
+                get_keypoint_xy('right_knee')
+            ) if all(k in keypoints for k in ['right_shoulder', 'right_hip', 'right_knee']) else None
+        }
+        
+        # Get results with error handling
+        try:
+            left_hip_knee_ankle = angle_tasks['left_leg'].result() if angle_tasks['left_leg'] else None
+            right_hip_knee_ankle = angle_tasks['right_leg'].result() if angle_tasks['right_leg'] else None
+            left_back_angle = angle_tasks['left_back'].result() if angle_tasks['left_back'] else None
+            right_back_angle = angle_tasks['right_back'].result() if angle_tasks['right_back'] else None
+        except Exception:
+            left_hip_knee_ankle = right_hip_knee_ankle = left_back_angle = right_back_angle = None
+    
+    # Use the more reliable back angle (average if both available)
+    back_angle = None
+    if left_back_angle is not None and right_back_angle is not None:
+        back_angle = (left_back_angle + right_back_angle) / 2
+    elif left_back_angle is not None:
+        back_angle = left_back_angle
+    elif right_back_angle is not None:
+        back_angle = right_back_angle
+    
+    # Check for sitting positions
+    # Floor sitting: knees more bent (90-120 degrees), back more upright (70-90 degrees)
+    is_sitting_floor = (
+        (left_hip_knee_ankle and 90 <= left_hip_knee_ankle <= 120) or
+        (right_hip_knee_ankle and 90 <= right_hip_knee_ankle <= 120)
+    ) and (
+        back_angle and 70 <= back_angle <= 90
     )
     
-    # Check for standing position - look for straighter legs
+    # Chair sitting: knees less bent (70-100 degrees), back more reclined (90-120 degrees)
+    is_sitting_chair = (
+        (left_hip_knee_ankle and 70 <= left_hip_knee_ankle <= 100) or
+        (right_hip_knee_ankle and 70 <= right_hip_knee_ankle <= 100)
+    ) and (
+        back_angle and 90 <= back_angle <= 120
+    )
+    
+    # Check for standing position
+    # Standing: straighter legs (160-180 degrees), more upright back (150-180 degrees)
     is_standing = (
-        (hip_knee_ankle_left and 160 <= hip_knee_ankle_left <= 180) or
-        (hip_knee_ankle_right and 160 <= hip_knee_ankle_right <= 180)
+        (left_hip_knee_ankle and 160 <= left_hip_knee_ankle <= 180) or
+        (right_hip_knee_ankle and 160 <= right_hip_knee_ankle <= 180)
+    ) and (
+        back_angle and 150 <= back_angle <= 180
     )
     
     # High stability indicates less movement
     is_stable = stability < 5.0  # Low displacement indicates stillness
     
-    if is_stable:
+    if is_stable and not objects:
         result['is_resting'] = True
         result['confidence'] = 0.8
         
-        if is_sitting:
-            result['position'] = 'sitting'
-            result['confidence'] = 0.9
-        elif is_standing:
+        # Calculate confidence based on how well angles match expected ranges
+        if is_sitting_floor and not objects:
+            result['position'] = 'sitting_floor'
+            # Higher confidence if both legs match the pattern
+            confidence = 0.9 if (left_hip_knee_ankle and right_hip_knee_ankle) else 0.8
+            result['confidence'] = confidence
+            
+        elif is_sitting_chair and not objects:
+            result['position'] = 'sitting_chair'
+            # Higher confidence if both legs match the pattern
+            confidence = 0.9 if (left_hip_knee_ankle and right_hip_knee_ankle) else 0.8
+            result['confidence'] = confidence
+            
+        elif is_standing and not objects:
             result['position'] = 'standing'
-            result['confidence'] = 0.9
+            # Higher confidence if both legs are straight
+            confidence = 0.9 if (left_hip_knee_ankle and right_hip_knee_ankle) else 0.8
+            result['confidence'] = confidence
     
     return result

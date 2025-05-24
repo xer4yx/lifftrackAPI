@@ -1,3 +1,7 @@
+"""
+LiftTrack API - A FastAPI application for tracking workout progress
+"""
+
 from lifttrack.utils.warning_suppressor import suppress_warnings
 from lifttrack.utils.logging_config import setup_logger
 

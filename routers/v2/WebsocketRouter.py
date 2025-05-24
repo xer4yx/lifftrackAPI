@@ -40,6 +40,7 @@ async def track_exercise(
     token: str = Query(...),
     db: FirebaseDBHelper = Depends(get_db)
     ):
+    
     if not validate_token(token, username):
         logger.error(f"Invalid token for user: {username}")
         await websocket.close(
@@ -99,14 +100,14 @@ async def track_exercise(
             logger.error(f"Error parsing frame: {str(e)}")
             return None
 
-    async def analyze_buffer(frames_buffer, current_frame_count, second_number):
+    async def analyze_buffer(frames_buffer, current_frame_count, second_number, websocket: WebSocket):
         """Analyze the buffer of frames and send results"""
         loop = asyncio.get_running_loop()
         
         try:
             # Run analysis in thread pool
             current_keypoints, previous_keypoints, object_inference, predicted_class_name = await loop.run_in_executor(
-                thread_pool, perform_frame_analysis, frames_buffer.copy())
+                thread_pool, perform_frame_analysis, frames_buffer.copy(), websocket)
             
             # Process results
             object_predictions = load_to_object_model(object_inference)
@@ -184,7 +185,7 @@ async def track_exercise(
                     
                     # Schedule analysis and don't wait for it
                     analysis_task = asyncio.create_task(
-                        analyze_buffer(frames_buffer.copy(), frame_count, current_second)
+                        analyze_buffer(frames_buffer.copy(), frame_count, current_second, websocket)
                     )
                     
                     # Properly track the task

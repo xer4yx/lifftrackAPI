@@ -1,10 +1,10 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime, timezone
 import logging
 
-from core.entities import UserEntity
-from core.interface import AuthInterface, UserValidationInterface, PasswordValidationInterface, NTFInterface
-from core.service import generate_user_id, validate_email, validate_phone_number, validate_password
+from core.entities import UserEntity, ValidationResultEntity, CredentialsEntity, TokenEntity
+from core.interface import AuthenticationInterface, NTFInterface
+from core.service import generate_user_id, validate_email, validate_password
 
 
 class UserUseCase:
@@ -15,14 +15,10 @@ class UserUseCase:
     
     def __init__(
         self,
-        auth_service: AuthInterface,
-        user_validation: UserValidationInterface,
-        password_validation: PasswordValidationInterface,
+        auth_service: AuthenticationInterface,
         database_service: NTFInterface
     ):
         self.auth_service = auth_service
-        self.user_validation = user_validation
-        self.password_validation = password_validation
         self.database_service = database_service
         self.logger = logging.getLogger(__name__)
     
@@ -32,8 +28,10 @@ class UserUseCase:
         email: str,
         password: str,
         first_name: str,
-        last_name: str
-    ) -> Optional[UserEntity]:
+        last_name: str,
+        phone_number: str,
+        profile_picture: Optional[str] = None
+    ) -> Tuple[bool, Optional[UserEntity], Optional[str]]:
         """
         Register a new user in the system.
         
@@ -43,27 +41,36 @@ class UserUseCase:
             password: User's password
             first_name: User's first name
             last_name: User's last name
+            phone_number: User's phone number
+            profile_picture: URL to user's profile picture (optional)
             
         Returns:
-            UserEntity if registration successful, None otherwise
+            Tuple containing (success, user_entity, error_message)
         """
         try:
-            # Validate input data
-            if not validate_email(email):
-                return None
+            # Validate user input
+            user_data = {
+                "username": username,
+                "email": email,
+                "password": password,
+                "first_name": first_name,
+                "last_name": last_name,
+                "phone_number": phone_number,
+                "profile_picture": profile_picture
+            }
+            
+            validation_result = await self.auth_service.validate_user_input(user_data)
+            if not validation_result.is_valid:
+                return False, None, "; ".join(validation_result.errors)
                 
-            if not validate_password(password):
-                return None
-                
-            # Check if user already exists
-            if await self.user_validation.is_username_taken(username):
-                return None
-                
-            if await self.user_validation.is_email_taken(email):
-                return None
+            # Check if username is taken
+            if await self.auth_service.is_username_taken(username):
+                return False, None, "Username already exists"
             
             # Create user entity
-            hashed_password = await self.password_validation.hash_password(password)
+            hashed_password = await self.auth_service.hash_password(password)
+            
+            current_time = datetime.now(timezone.utc)
             
             user = UserEntity(
                 id=generate_user_id(),
@@ -72,15 +79,28 @@ class UserUseCase:
                 password=hashed_password,
                 first_name=first_name,
                 last_name=last_name,
-                created_at=datetime.now(timezone.utc)
+                phone_number=phone_number,
+                profile_picture=profile_picture,
+                created_at=current_time
             )
             
+            # Serialize user data for database storage
+            # Convert datetime to ISO format string to make it JSON serializable
+            user_dict = user.model_dump(exclude_none=True)
+            if "created_at" in user_dict:
+                user_dict["created_at"] = user_dict["created_at"].isoformat()
+            if "updated_at" in user_dict:
+                user_dict["updated_at"] = user_dict["updated_at"].isoformat()
+            if "last_login" in user_dict:
+                user_dict["last_login"] = user_dict["last_login"].isoformat()
+            
             # Save user to database
-            await self.database_service.set_data(user.id, user.model_dump(exclude_none=True))
-            return user
+            await self.database_service.set_data(f"users/{user.username}", user_dict)
+            
+            return True, user, None
         except Exception as e:
             self.logger.error(f"Error registering user: {str(e)}")
-            return None
+            return False, None, f"Registration error: {str(e)}"
     
     async def authenticate_user(self, credentials: Dict[str, Any]) -> Optional[Dict[str, str]]:
         """
@@ -93,16 +113,41 @@ class UserUseCase:
             Dictionary with access and refresh tokens if authentication successful, None otherwise
         """
         try:
-            user = await self.auth_service.authenticate(credentials)
+            # Convert dictionary to credentials entity
+            creds = CredentialsEntity(
+                username=credentials.get("username_or_email", ""),
+                password=credentials.get("password", "")
+            )
+            
+            # Authenticate user
+            user = await self.auth_service.authenticate(creds)
             if not user:
                 return None
                 
             # Update last login time
             user.last_login = datetime.now(timezone.utc)
-            await self.database_service.set_data(user.id, user.model_dump())
+            
+            # Serialize user data for database storage
+            # Convert datetime to ISO format string to make it JSON serializable
+            user_dict = user.model_dump(exclude_none=True)
+            if "created_at" in user_dict:
+                user_dict["created_at"] = user_dict["created_at"].isoformat()
+            if "updated_at" in user_dict:
+                user_dict["updated_at"] = user_dict["updated_at"].isoformat()
+            if "last_login" in user_dict:
+                user_dict["last_login"] = user_dict["last_login"].isoformat()
+            
+            await self.database_service.set_data(f"users/{user.username}", user_dict)
             
             # Generate tokens
-            return await self.auth_service.generate_tokens(user.id)
+            token = await self.auth_service.create_token(user)
+            refresh_token = await self.auth_service.refresh_token(token.access_token)
+            
+            return {
+                "access_token": token.access_token,
+                "token_type": token.token_type,
+                "refresh_token": refresh_token.access_token if refresh_token else None
+            }
         except Exception as e:
             self.logger.error(f"Error authenticating user: {str(e)}")
             return None
@@ -118,55 +163,77 @@ class UserUseCase:
             UserEntity if user exists, None otherwise
         """
         try:
-            return await self.database_service.get_data(user_id)
+            user_data = await self.database_service.get_data(f"users/{user_id}")
+            if not user_data:
+                return None
+                
+            return UserEntity(**user_data)
         except Exception as e:
             self.logger.error(f"Error getting user profile: {str(e)}")
             return None
     
     async def update_user_profile(
         self,
-        user: UserEntity
-    ) -> Optional[UserEntity]:
+        user_id: str,
+        update_data: Dict[str, Any]
+    ) -> Tuple[bool, Optional[UserEntity], Optional[str]]:
         """
         Update a user's profile information.
         
         Args:
-            user: UserEntity containing updated profile information
+            user_id: User's unique identifier
+            update_data: Dictionary containing fields to update
             
         Returns:
-            Updated UserEntity if successful, None otherwise
+            Tuple containing (success, updated_user, error_message)
         """
         try:
-            user = await self.database_service.get_data(user.id)
-            if not user:
-                return None
+            # Validate update data
+            validation_result = await self.auth_service.validate_user_input(update_data, is_update=True)
+            if not validation_result.is_valid:
+                return False, None, "; ".join(validation_result.errors)
+            
+            # Get existing user
+            user_data = await self.database_service.get_data(f"users/{user_id}")
+            if not user_data:
+                return False, None, "User not found"
+                
+            current_user = UserEntity(**user_data)
                 
             # Update fields if provided
-            if user.first_name:
-                user.first_name = user.first_name
+            if "first_name" in update_data:
+                current_user.first_name = update_data["first_name"]
                 
-            if user.last_name:
-                user.last_name = user.last_name
+            if "last_name" in update_data:
+                current_user.last_name = update_data["last_name"]
                 
-            if user.email and user.email != user.email:
-                if not validate_email(user.email):
-                    return None
+            if "email" in update_data and update_data["email"] != current_user.email:
+                # Email is being changed, verify it's not taken
+                if await self.auth_service.is_username_taken(update_data["email"]):
+                    return False, None, "Email already in use"
                     
-                if await self.user_validation.is_email_taken(user.email):
-                    return None
-                    
-                user.email = user.email
-                user.is_verified = False  # Require re-verification for new email
+                current_user.email = update_data["email"]
+                current_user.is_authenticated = False  # Require re-verification for new email
             
-            user.updated_at = datetime.now(timezone.utc)
+            current_user.updated_at = datetime.now(timezone.utc)
             
-            await self.database_service.set_data(user.id, user.model_dump(exclude_none=True))
-            return user
+            # Serialize user data for database storage
+            # Convert datetime to ISO format string to make it JSON serializable
+            user_dict = current_user.model_dump(exclude_none=True)
+            if "created_at" in user_dict:
+                user_dict["created_at"] = user_dict["created_at"].isoformat()
+            if "updated_at" in user_dict:
+                user_dict["updated_at"] = user_dict["updated_at"].isoformat()
+            if "last_login" in user_dict:
+                user_dict["last_login"] = user_dict["last_login"].isoformat()
+            
+            await self.database_service.set_data(f"users/{current_user.username}", user_dict)
+            return True, current_user, None
         except Exception as e:
             self.logger.error(f"Error updating user profile: {str(e)}")
-            return None
+            return False, None, f"Update error: {str(e)}"
     
-    async def change_user_password(self, user_id: str, old_password: str, new_password: str) -> bool:
+    async def change_user_password(self, user_id: str, old_password: str, new_password: str) -> Tuple[bool, Optional[str]]:
         """
         Change a user's password.
         
@@ -176,18 +243,25 @@ class UserUseCase:
             new_password: New password
             
         Returns:
-            True if password changed successfully, False otherwise
+            Tuple containing (success, error_message)
         """
         try:
-            if not validate_password(new_password):
-                return False
+            # Validate new password strength
+            validation = await self.auth_service.validate_password_strength(new_password)
+            if not validation.is_valid:
+                return False, "; ".join(validation.errors)
                 
-            return await self.auth_service.change_password(user_id, old_password, new_password)
+            # Attempt to change password
+            result, error = await self.auth_service.change_password(user_id, old_password, new_password)
+            if not result:
+                return False, error or "Failed to change password"
+                
+            return True, None
         except Exception as e:
             self.logger.error(f"Error changing user password: {str(e)}")
-            return False
+            return False, f"Password change error: {str(e)}"
     
-    async def delete_user(self, user_id: str) -> bool:
+    async def delete_user(self, user_id: str) -> Tuple[bool, Optional[str]]:
         """
         Mark a user as deleted in the system.
         
@@ -195,19 +269,20 @@ class UserUseCase:
             user_id: User's unique identifier
             
         Returns:
-            True if user was deleted successfully, False otherwise
+            Tuple containing (success, error_message)
         """
         try:
-            user = await self.database_service.get_data(user_id)
-            if not user:
-                return False
+            user_data = await self.database_service.get_data(f"users/{user_id}")
+            if not user_data:
+                return False, "User not found"
                 
+            user = UserEntity.model_validate(user_data)
             user.is_deleted = True
             user.updated_at = datetime.now(timezone.utc)
             
-            await self.database_service.set_data(user.id, user.model_dump(exclude_none=True))
-            return True
+            await self.database_service.set_data(f"users/{user.id}", user.model_dump(exclude_none=True))
+            return True, None
         except Exception as e:
             self.logger.error(f"Error deleting user: {str(e)}")
-            return False
+            return False, f"Delete error: {str(e)}"
 
