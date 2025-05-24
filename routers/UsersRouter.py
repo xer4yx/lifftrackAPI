@@ -19,9 +19,7 @@ from lifttrack.auth import (
     verify_password
 )
 from lifttrack.models import User
-from lifttrack.dbhandler.rest_rtdb import RTDBHelper
 from lifttrack.utils.logging_config import setup_logger, log_network_io
-from .manager import HTTPConnectionPool
 
 from infrastructure.database import FirebaseREST
 from infrastructure.di import get_firebase_rest
@@ -208,9 +206,14 @@ async def update_user_data(
         )
 
 
-@router.put("/user/{username}/change-pass")
+@router.put("/user/{username}/change-pass", status_code=status.HTTP_200_OK)
 @limiter.limit("5/minute")
-async def change_password(user: User, request: Request, response: Response, current_password: str = Query(..., description="Current password of the user")):
+async def change_password(
+    user: User, 
+    request: Request, 
+    response: Response, 
+    current_password: str = Query(..., description="Current password of the user"),
+    db: FirebaseREST = Depends(get_firebase_rest)):
     """
     Endpoint to change user password.
 
@@ -220,29 +223,27 @@ async def change_password(user: User, request: Request, response: Response, curr
         request: FastAPI Request object.
     """
     try:
-        async with HTTPConnectionPool.get_session() as session:
-            async with RTDBHelper(session) as rtdb:
-                hashed_pass = await rtdb.get_data(username=user.username, data="password")
+        hashed_pass = await db.get_data(key=f"users/{user.username}/password")
 
-                if not hashed_pass or not verify_password(current_password, hashed_pass):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Incorrect password."
-                    )
-                
-                user.password = get_password_hash(user.password)
+        if not hashed_pass or not verify_password(current_password, hashed_pass):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect password."
+            )
+        
+        user.password = get_password_hash(user.password)
 
-                snapshot = await rtdb.update_data(user.username, user.model_dump(exclude_none=True))
-                if not snapshot:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Password change failed."
-                    )
+        snapshot = await db.set_data(key=f"users/{user.username}", value=user.model_dump(exclude_none=True))
+        if not snapshot:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password change failed."
+            )
 
-                return JSONResponse(
-                    content={"msg": "Password changed."},
-                    status_code=status.HTTP_200_OK
-                )
+        return JSONResponse(
+            content={"msg": "Password changed."},
+            status_code=status.HTTP_200_OK
+        )
     except HTTPException as httpe:
         return JSONResponse(
             content={"msg": httpe.detail},

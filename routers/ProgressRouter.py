@@ -8,12 +8,10 @@ from slowapi.util import get_remote_address
 from lifttrack import network_logger
 from lifttrack.models import User, ExerciseData
 from lifttrack.auth import get_current_user
-from lifttrack.dbhandler.rest_rtdb import RTDBHelper
 from lifttrack.utils.logging_config import setup_logger, log_network_io
-from .manager import HTTPConnectionPool
 
-from infrastructure.database import FirebaseREST
-from infrastructure.di import get_firebase_rest
+from infrastructure.database import FirebaseAdmin
+from infrastructure.di import get_firebase_admin
 
 # Configure logging
 logger = setup_logger("progress_routes", "router.log")
@@ -28,7 +26,7 @@ router = APIRouter(
 # Initialize Limiter
 limiter = Limiter(key_func=get_remote_address)
 
-@router.put("/{username}/{exercise}")
+@router.put("/{username}/{exercise}", status_code=status.HTTP_201_CREATED)
 @limiter.limit("30/minute")
 async def create_progress(
     username: str, 
@@ -36,7 +34,8 @@ async def create_progress(
     exercise_data: ExerciseData,
     request: Request,
     response: Response,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: FirebaseAdmin = Depends(get_firebase_admin)
 ):
     """
     Endpoint to create or append exercise progress data.
@@ -47,14 +46,13 @@ async def create_progress(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot modify other user's progress"
             )
-        async with HTTPConnectionPool.get_session() as session:
-            async with RTDBHelper(session) as rtdb:
-                await rtdb.put_progress(username, exercise, exercise_data)
+        
+        await db.set_data(key=f"progress/{username}/{exercise}", value=exercise_data.model_dump())
             
-                return JSONResponse(
-                    content={"msg": "Progress saved successfully"},
-                    status_code=status.HTTP_201_CREATED
-                )
+        return JSONResponse(
+            content={"msg": "Progress saved successfully"},
+            status_code=status.HTTP_201_CREATED
+        )
     except ValidationError as vale:
         return JSONResponse(
             content={"msg": str(vale)},
@@ -79,14 +77,15 @@ async def create_progress(
             response_status=response.status_code
         )
 
-@router.get("/{username}")
+@router.get("/{username}", status_code=status.HTTP_200_OK)
 @limiter.limit("30/minute")
 async def get_progress(
     username: str,
     request: Request,
     response: Response,
     exercise: Annotated[Optional[str], Query(description="Exercise name")] = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: FirebaseAdmin = Depends(get_firebase_admin)
 ):
     """
     Endpoint to retrieve progress data.
@@ -97,28 +96,24 @@ async def get_progress(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot access other user's progress"
             )
+
+        key = f"progress/{username}"
+        if exercise:
+            key += f"/{exercise}"
             
-        # Use HTTPConnectionPool directly instead of db dependency
-        async with HTTPConnectionPool.get_session() as session:
-            async with RTDBHelper(session) as rtdb:
-                # Construct the key based on whether exercise is provided
-                key = f"progress/{username}"
-                if exercise:
-                    key += f"/{exercise}"
-                    
-                progress = await rtdb.get_progress(username, exercise)
-                
-                # Handle case when progress data is not found
-                if progress is None:
-                    return JSONResponse(
-                        content={},  # Return empty object instead of null
-                        status_code=status.HTTP_200_OK
-                    )
-                
-                return JSONResponse(
-                    content=progress,
-                    status_code=status.HTTP_200_OK
-                )
+        progress = await db.get_data(key=key)
+        
+        # Handle case when progress data is not found
+        if progress is None:
+            return JSONResponse(
+                content={},  # Return empty object instead of null
+                status_code=status.HTTP_200_OK
+            )
+        
+        return JSONResponse(
+            content=progress,
+            status_code=status.HTTP_200_OK
+        )
     except HTTPException as httpe:
         return JSONResponse(
             content={"msg": httpe.detail},
@@ -138,14 +133,15 @@ async def get_progress(
             response_status=response.status_code
         )
 
-@router.delete("/{username}")
+@router.delete("/{username}", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("10/minute")
 async def delete_progress(
     request: Request,
     response: Response,
     username: str,
     exercise: Optional[str] = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: FirebaseAdmin = Depends(get_firebase_admin)
 ):
     """
     Endpoint to delete progress data.
@@ -156,19 +152,13 @@ async def delete_progress(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot delete other user's progress"
             )
-        async with HTTPConnectionPool.get_session() as session:
-            async with RTDBHelper(session) as rtdb:
-                deleted = await rtdb.delete_progress(username, exercise)
-                if not deleted:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Progress deletion failed"
-                    )
-                    
-                return JSONResponse(
-                    content={"msg": "Progress deleted successfully"},
-                    status_code=status.HTTP_200_OK
-                )
+        
+        await db.delete_data(key=f"progress/{username}/{exercise}")
+        
+        return JSONResponse(
+            content={"msg": "Progress deleted successfully"},
+            status_code=status.HTTP_204_NO_CONTENT
+        )
     except HTTPException as httpe:
         return JSONResponse(
             content={"msg": httpe.detail},

@@ -44,7 +44,7 @@ def check_bench_press_form(features, predicted_class_name):
         suggestions.append("Wrists stay aligned with elbows throughout.")
     
     # Check back arching using enhanced body alignment
-    vertical_alignment = float(body_alignment.get('0', 0))
+    vertical_alignment = float(body_alignment.get('vertical_alignment', body_alignment.get('0', 0)))
     if vertical_alignment > 20:  # More than 20 degrees from vertical
         accuracy -= 0.15
         suggestions.append("Don't over-arch; lower back stays on the bench.")
@@ -56,7 +56,7 @@ def check_bench_press_form(features, predicted_class_name):
             suggestions.append("Maintain proper elbow angle.")
         
         # Bar path check using enhanced movement pattern detection
-        lateral_alignment = float(body_alignment.get('1', 0))
+        lateral_alignment = float(body_alignment.get('lateral_alignment', body_alignment.get('1', 0)))
         if lateral_alignment > 15:  # More than 15 degrees of lateral movement
             accuracy -= 0.15
             suggestions.append("Bar path: down and forward, then up and back.")
@@ -102,7 +102,7 @@ def check_deadlift_form(features, predicted_class_name):
     
     # Use enhanced body alignment check
     body_alignment = features.get('body_alignment', {})
-    if float(body_alignment.get('0', 0)) > 40:
+    if float(body_alignment.get('vertical_alignment', body_alignment.get('0', 0))) > 40:
         accuracy -= 0.1
         suggestions.append("Bar stays in contact with legs.")
     
@@ -133,8 +133,8 @@ def check_rdl_form(features, predicted_class_name):
     
     # Enhanced body alignment checks
     body_alignment = features.get('body_alignment', {})
-    vertical_alignment = float(body_alignment.get('0', 0))
-    lateral_alignment = float(body_alignment.get('1', 0))
+    vertical_alignment = float(body_alignment.get('vertical_alignment', body_alignment.get('0', 0)))
+    lateral_alignment = float(body_alignment.get('lateral_alignment', body_alignment.get('1', 0)))
     
     if vertical_alignment > 50 or lateral_alignment > 20:
         accuracy -= 0.1
@@ -160,7 +160,7 @@ def check_shoulder_press_form(features, predicted_class_name):
     
     # Use improved body alignment calculation
     body_alignment = features.get('body_alignment', {})
-    vertical_alignment = float(body_alignment.get('0', 0))
+    vertical_alignment = float(body_alignment.get('vertical_alignment', body_alignment.get('0', 0)))
     if vertical_alignment > 65:
         accuracy -= 0.1
         suggestions.append("Stay vertically aligned, head to hips.")

@@ -1,9 +1,9 @@
 from pydantic import BaseModel
 
-from .auth_schema import LoginForm, Token, TokenData
+from .auth_schema import LoginForm, Token, TokenData, TokenBlacklist
 from .exercise_schema import *
 from .progress_schema import Progress
-from .user_schema import User, UserUpdate
+from .user_schema import User, UserUpdate, UserResponse
 from .stats_schema import Stats
 
 
@@ -30,8 +30,10 @@ __all__ = [
     "Object",
     "Token",
     "TokenData",
+    "TokenBlacklist",
     "User",
     "UserUpdate",
+    "UserResponse",
     "Progress",
     "Stats"
 ]

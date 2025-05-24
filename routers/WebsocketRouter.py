@@ -22,10 +22,11 @@ thread_pool = ThreadPoolExecutor(max_workers=4)
 
 
 # Helper function to perform analysis in a separate thread
-def perform_analysis(frames_buffer, username, exercise_name, db_exercise_name, frame_count, db):
+def perform_analysis(frames_buffer, username, exercise_name, db_exercise_name, frame_count, db, websocket: WebSocket):
     try:
         curr_keypoints, prev_keypoints, object_inference, predicted_class_name = perform_frame_analysis(
-            frames_buffer=frames_buffer
+            frames_buffer=frames_buffer,
+            shared_resource=websocket
         )
 
         object_predictions = load_to_object_model(object_inference)
@@ -66,7 +67,7 @@ def perform_analysis(frames_buffer, username, exercise_name, db_exercise_name, f
     
     
 # Helper function to run analysis in thread pool and handle correctly as a coroutine
-async def run_analysis_in_thread(frames_buffer, username, exercise_name, db_exercise_name, frame_count, db):
+async def run_analysis_in_thread(frames_buffer, username, exercise_name, db_exercise_name, frame_count, db, websocket: WebSocket):
     try:
         # Run the analysis in a thread pool
         return await asyncio.get_event_loop().run_in_executor(
@@ -77,7 +78,8 @@ async def run_analysis_in_thread(frames_buffer, username, exercise_name, db_exer
             exercise_name,
             db_exercise_name,
             frame_count,
-            db
+            db,
+            websocket
         )
     except Exception as e:
         logger.error(f"Analysis thread error: {str(e)}")
@@ -157,7 +159,8 @@ async def websocket_endpoint(
                         exercise_name,
                         db_exercise_name,
                         frame_count,
-                        db
+                        db,
+                        websocket
                     )
                     
                     if suggestions:

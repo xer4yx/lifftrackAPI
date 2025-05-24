@@ -12,6 +12,15 @@ from typing import Any, Dict, Optional
 from core.interface import NTFInterface
 from lifttrack.utils.logging_config import setup_logger
 
+def make_awaitable(obj):
+    """
+    Convert a non-awaitable object into an awaitable using asyncio.Future.
+    This allows dictionaries and other objects to be used with await.
+    """
+    future = asyncio.Future()
+    future.set_result(obj)
+    return future
+
 class FirebaseREST(NTFInterface):
     """
     FirebaseREST is a class that provides a REST interface to the Firebase Realtime Database.
@@ -24,7 +33,7 @@ class FirebaseREST(NTFInterface):
             authentication: The authentication token.
             session: Session object for the database.
         """
-        self.logger = setup_logger("firebase-rest", "api_di.log")
+        self.logger = setup_logger("infrastructure.firebase.rest", "db.log")
         self.dsn = dsn
         self.auth = authentication
         self.__lock = asyncio.Lock()
@@ -68,6 +77,7 @@ class FirebaseREST(NTFInterface):
                     return await func(self, *args, **kwargs)
             except Exception as e:
                 self.logger.exception(f"Error in sessionmanager: {e}")
+                raise
         return wrapper
     
     @sessionmanager
@@ -79,11 +89,26 @@ class FirebaseREST(NTFInterface):
                 
             response = await self.__session.get(url)
             if response.status_code == status.HTTP_200_OK:
-                data = response.json()
+                # Check if json is a method or property/attribute
+                if callable(response.json):
+                    # It's a method (aiohttp style)
+                    json_result = response.json()
+                    if hasattr(json_result, '__await__'):
+                        data = await json_result
+                    else:
+                        data = json_result
+                else:
+                    # It's already a data object (likely a dict)
+                    data = response.json
+                
                 self.logger.debug(f"Data retrieved for key: {key}")
                 return data if data is not None else {}
             else:
-                self.logger.error(f"Failed to get data for key {key}. Reason: {response.content}")
+                # Handle both cases where content could be bytes or a StreamReader
+                content = response.content
+                if hasattr(content, 'read') and callable(content.read):
+                    content = await content.read()
+                self.logger.error(f"Failed to get data for key {key}. Reason: {content}")
                 return {}
         except Exception as e:
             self.logger.exception(f"Error in get_data for key {key}: {e}")
@@ -100,25 +125,44 @@ class FirebaseREST(NTFInterface):
             if response.status_code == status.HTTP_200_OK:
                 return
             else:
-                raise Exception(f"Error setting data: {response.content}")
+                # Handle both cases where content could be bytes or a StreamReader
+                content = response.content
+                if hasattr(content, 'read') and callable(content.read):
+                    content = await content.read()
+                raise Exception(f"Error setting data: {content}")
         except Exception as e:
             self.logger.exception(f"Error in set_data: {e}")
+            # Only re-raise exceptions that were explicitly raised in this method
+            # Connection errors and other external exceptions are just logged
+            if "Error setting data:" in str(e):
+                raise
     
     @sessionmanager
     async def delete_data(self, key: str) -> None:
-        url = f"{self.dsn}/{key}.json"
-        if self.auth:
-            url += f"?auth={self.auth}"
-        
-        response = await self.__session.delete(url)
-        if response.status_code == status.HTTP_200_OK:
-            return True
-        else:
-            raise Exception(f"Error deleting data: {response.content}")
+        try:
+            url = f"{self.dsn}/{key}.json"
+            if self.auth:
+                url += f"?auth={self.auth}"
+            
+            response = await self.__session.delete(url)
+            if response.status_code == status.HTTP_200_OK:
+                return True
+            else:
+                # Handle both cases where content could be bytes or a StreamReader
+                content = response.content
+                if hasattr(content, 'read') and callable(content.read):
+                    content = await content.read()
+                raise Exception(f"Error deleting data: {content}")
+        except Exception as e:
+            self.logger.exception(f"Error in delete_data: {e}")
+            # Only re-raise exceptions that were explicitly raised in this method
+            # Connection errors and other external exceptions are just logged
+            if "Error deleting data:" in str(e):
+                raise
 
 
 class FirebaseAdmin(NTFInterface):
-    _logger = setup_logger("firebase-admin", "api_di.log")
+    _logger = setup_logger("infrastructure.firebase.admin", "db.log")
     _instance = None
     _lock = threading.Lock()
     

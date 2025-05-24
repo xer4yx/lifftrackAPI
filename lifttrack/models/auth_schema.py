@@ -1,5 +1,6 @@
 from typing import Optional
 from pydantic import BaseModel, Field
+from datetime import datetime, timezone
 
 
 class LoginForm(BaseModel):
@@ -14,3 +15,9 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: Optional[str] = Field(default=None, title="Username")
+
+
+class TokenBlacklist(BaseModel):
+    token: str = Field(default=..., title="Blacklisted Token")
+    expiry: datetime = Field(default=..., title="Token Expiry Time")
+    blacklisted_on: datetime = Field(default=datetime.now(tz=timezone.utc), title="Blacklisted Timestamp")

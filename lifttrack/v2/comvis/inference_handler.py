@@ -1,7 +1,10 @@
-from typing import Any, Dict
+from fastapi import Request, WebSocket
 import numpy as np
 import cv2
-from lifttrack.v2.comvis import movenet_inference, object_tracker, three_dim_inference
+from concurrent.futures import ThreadPoolExecutor
+import time
+from typing import Any, Dict
+
 from .features import (
     extract_joint_angles, 
     extract_movement_patterns, 
@@ -13,9 +16,6 @@ from .progress import calculate_form_accuracy
 from lifttrack.models import Object, Features, ExerciseData
 from lifttrack.v2.dbhelper.admin_rtdb import FirebaseDBHelper
 from lifttrack.utils.logging_config import setup_logger
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-import time
 
 logger = setup_logger("inference_handler", "inference_handler.log")
 
@@ -40,9 +40,13 @@ def process_frame(frame: np.ndarray):
         logger.error(f"Failed to process frame: {str(e)}")
         raise
 
-def perform_frame_analysis(frames_buffer: Any):
+def perform_frame_analysis(frames_buffer: Any, shared_resource: Request | WebSocket):
     """
     Perform parallel frame analysis on the input frames.
+    
+    Args:
+        frames_buffer: Buffer containing frames to analyze
+        request: FastAPI request object to access inference services
     """
     try:
         if len(frames_buffer) < 2:
@@ -50,19 +54,33 @@ def perform_frame_analysis(frames_buffer: Any):
 
         start_time = time.time()
 
+        # Use services from app state if request is provided
+        if not hasattr(shared_resource.app.state, 'inference_services'):
+            raise ValueError("Inference services not found in request")
+        
+        services = shared_resource.app.state.inference_services
+        videoaction_service = services.get('videoaction')
+        posenet_service = services.get('posenet')
+        roboflow_service = services.get('roboflow')
+        
         # Run models in parallel using ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=4) as executor:
-            # Submit all tasks to the executor
-            class_name_future = executor.submit(three_dim_inference.predict_class, frames_buffer)
-            current_pose_future = executor.submit(movenet_inference.analyze_frame, frames_buffer[-1])
-            detected_object_future = executor.submit(object_tracker.process_frames_and_get_annotations, frames_buffer[-1])
-            previous_pose_future = executor.submit(movenet_inference.analyze_frame, frames_buffer[-2])
+            # Submit all tasks to the executor using the appropriate service methods
+            class_name_future = executor.submit(videoaction_service.predict_class, frames_buffer)
+            current_pose_future = executor.submit(posenet_service.infer, frames_buffer[-1])
+            detected_object_future = executor.submit(roboflow_service.infer, frames_buffer[-1])
+            previous_pose_future = executor.submit(posenet_service.infer, frames_buffer[-2])
             
             # Get results from futures
             class_name = class_name_future.result()
-            _, current_pose = current_pose_future.result()
-            detected_object = detected_object_future.result()
-            _, previous_pose = previous_pose_future.result()
+            current_pose_result = current_pose_future.result()
+            detected_object_result = detected_object_future.result()
+            previous_pose_result = previous_pose_future.result()
+            
+            # Extract the relevant data from the results
+            current_pose = current_pose_result.get("keypoints", {})
+            previous_pose = previous_pose_result.get("keypoints", {})
+            detected_object = detected_object_result.get("predictions", [])
 
         # Log processing time
         processing_time = time.time() - start_time

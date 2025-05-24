@@ -1,33 +1,39 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 
+from core.entities.user_entity import UserEntity
+from core.entities.auth_entity import (
+    TokenEntity, 
+    TokenDataEntity, 
+    CredentialsEntity,
+    ValidationResultEntity
+)
 
-class PasswordValidationInterface(ABC):
+
+class AuthenticationInterface(ABC):
     """
-    Abstract interface for password validation according to OWASP security standards.
+    Abstract interface for authentication services.
+    Implements OWASP security best practices and JWT authentication.
     """
     
     @abstractmethod
-    def validate_password_strength(self, password: str) -> Dict[str, Any]:
+    async def validate_password_strength(self, password: str) -> ValidationResultEntity:
         """
-        Validate password strength against OWASP requirements.
+        Validate password strength against security requirements.
         
         Args:
             password: The password to validate
             
         Returns:
-            Dictionary with validation results including:
-            - is_valid: Boolean indicating if password meets all requirements
-            - errors: List of validation errors if any
-            - score: Numeric score of password strength
+            ValidationResultEntity with validation results
         """
         pass
     
     @abstractmethod
-    def hash_password(self, password: str) -> str:
+    async def hash_password(self, password: str) -> str:
         """
-        Securely hash a password using strong algorithms (e.g., bcrypt, Argon2).
+        Securely hash a password using strong algorithms.
         
         Args:
             password: Plain text password to hash
@@ -38,7 +44,7 @@ class PasswordValidationInterface(ABC):
         pass
     
     @abstractmethod
-    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+    async def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """
         Verify a password against its hash.
         
@@ -50,118 +56,22 @@ class PasswordValidationInterface(ABC):
             True if password matches the hash, False otherwise
         """
         pass
-
-
-class UserValidationInterface(ABC):
-    """
-    Abstract interface for user data validation and verification.
-    """
     
     @abstractmethod
-    async def validate_user_data(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate user registration/profile data.
-        
-        Args:
-            user_data: Dictionary containing user data to validate
-            
-        Returns:
-            Dictionary with validation results including:
-            - is_valid: Boolean indicating if all data is valid
-            - errors: Dictionary of field-specific validation errors
-        """
-        pass
-    
-    @abstractmethod
-    async def verify_email(self, email: str, verification_token: str) -> bool:
-        """
-        Verify a user's email address using a verification token.
-        
-        Args:
-            email: Email address to verify
-            verification_token: Token sent to the user's email
-            
-        Returns:
-            True if email was successfully verified, False otherwise
-        """
-        pass
-    
-    @abstractmethod
-    async def is_email_taken(self, email: str) -> bool:
-        """
-        Check if an email address is already taken.
-        
-        Args:
-            email: Email address to check
-            
-        Returns:
-            True if email is taken, False otherwise
-        """
-        pass
-    
-    @abstractmethod 
-    async def is_username_taken(self, username: str) -> bool:
-        """
-        Check if a username is already taken.
-        
-        Args:
-            username: Username to check
-            
-        Returns:
-            True if username is taken, False otherwise
-        """
-        pass
-    
-    @abstractmethod
-    async def generate_verification_token(self, user_id: str, purpose: str) -> str:
-        """
-        Generate a verification token for email verification or password reset.
-        
-        Args:
-            user_id: User identifier
-            purpose: Purpose of the token (e.g., 'email_verification', 'password_reset')
-            
-        Returns:
-            Generated verification token
-        """
-        pass
-    
-    @abstractmethod
-    async def check_user_exists(self, identifier: str, identifier_type: str = "email") -> bool:
-        """
-        Check if a user exists by a given identifier.
-        
-        Args:
-            identifier: User identifier value (email, username, etc.)
-            identifier_type: Type of identifier being checked
-            
-        Returns:
-            True if user exists, False otherwise
-        """
-        pass
-
-
-class AuthInterface(ABC):
-    """
-    Abstract interface for authentication services.
-    Implements OWASP security best practices and JWT authentication.
-    """
-    
-    @abstractmethod
-    async def authenticate(self, credentials: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def authenticate(self, credentials: CredentialsEntity) -> Optional[UserEntity]:
         """
         Authenticate a user with provided credentials.
         
         Args:
-            credentials: Dictionary containing authentication credentials (username/email, password)
+            credentials: CredentialsEntity containing authentication credentials
             
         Returns:
-            User data if authentication is successful, None otherwise
+            UserEntity if authentication is successful, None otherwise
         """
         pass
     
     @abstractmethod
-    async def create_token(self, user_data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+    async def create_token(self, user_data: UserEntity, expires_delta: Optional[timedelta] = None) -> TokenEntity:
         """
         Create a JWT token for an authenticated user.
         
@@ -170,12 +80,12 @@ class AuthInterface(ABC):
             expires_delta: Optional expiration time delta
             
         Returns:
-            JWT token string
+            TokenEntity containing the token and related information
         """
         pass
     
     @abstractmethod
-    async def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
+    async def verify_token(self, token: str) -> Optional[TokenDataEntity]:
         """
         Verify and decode a JWT token.
         
@@ -183,12 +93,12 @@ class AuthInterface(ABC):
             token: JWT token to verify
             
         Returns:
-            Decoded token data if valid, None otherwise
+            TokenDataEntity with decoded token data if valid, None otherwise
         """
         pass
     
     @abstractmethod
-    async def refresh_token(self, refresh_token: str) -> Optional[Dict[str, str]]:
+    async def refresh_token(self, refresh_token: str) -> Optional[TokenEntity]:
         """
         Refresh an expired access token using a refresh token.
         
@@ -196,12 +106,12 @@ class AuthInterface(ABC):
             refresh_token: The refresh token
             
         Returns:
-            Dictionary with new access and refresh tokens if valid, None otherwise
+            New TokenEntity if valid, None otherwise
         """
         pass
     
     @abstractmethod
-    async def change_password(self, user_id: str, old_password: str, new_password: str) -> bool:
+    async def change_password(self, user_id: str, old_password: str, new_password: str) -> Tuple[bool, Optional[str]]:
         """
         Change a user's password with verification of the old password.
         
@@ -211,7 +121,7 @@ class AuthInterface(ABC):
             new_password: New password to set
             
         Returns:
-            True if password was changed successfully, False otherwise
+            Tuple with (success_status, error_message_if_any)
         """
         pass
     
@@ -225,6 +135,33 @@ class AuthInterface(ABC):
             
         Returns:
             True if logout was successful, False otherwise
+        """
+        pass
+    
+    @abstractmethod
+    async def is_username_taken(self, username: str) -> bool:
+        """
+        Check if a username is already taken.
+        
+        Args:
+            username: Username to check
+            
+        Returns:
+            True if username is taken, False otherwise
+        """
+        pass
+    
+    @abstractmethod
+    async def validate_user_input(self, user_data: Dict[str, Any], is_update: bool = False) -> ValidationResultEntity:
+        """
+        Validates user input data.
+        
+        Args:
+            user_data: Dictionary containing user data to validate
+            is_update: Whether this is an update operation
+            
+        Returns:
+            ValidationResultEntity with validation results
         """
         pass
 

@@ -1,6 +1,6 @@
 from pydantic import Field
-from typing import Optional, Dict, Any
 from pydantic_settings import BaseSettings
+from version import __version__
 
 
 class AppSettings(BaseSettings):
@@ -11,7 +11,7 @@ class AppSettings(BaseSettings):
     # Basic settings
     name: str = Field(default="MyApp", description="Name of the application")
     debug_mode: bool = Field(default=False, description="Enable debug mode")
-    version: str = Field(default="1.0.0", description="Application version")
+    version: str = Field(default=__version__, description="Application version")
     
     # Server settings
     host: str = Field(default="127.0.0.1", description="Server host address")
