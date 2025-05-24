@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - master
 
 jobs:
   version-check:
@@ -12,12 +13,12 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history for all branches and tags
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.x'
       
@@ -75,17 +76,18 @@ jobs:
             exit 1
           fi
           
-          # Update README.md with current version
+          # Update README.md with current version (for display only, don't commit)
           sed -i "s/v__VERSION__/v$CURRENT_VERSION/g" README.md
       
       - name: Check for version change
         run: |
           # This step checks if the version has been updated in the PR
-          # Get the files that were changed in this PR
-          git fetch origin main
+          # Get the target branch (main or master)
+          TARGET_BRANCH="${{ github.base_ref }}"
+          git fetch origin $TARGET_BRANCH
           
           # Check if version-related files were modified
-          VERSION_FILES_CHANGED=$(git diff --name-only origin/main..HEAD | grep -E 'pyproject.toml|version.py' || true)
+          VERSION_FILES_CHANGED=$(git diff --name-only origin/$TARGET_BRANCH..HEAD | grep -E 'pyproject.toml|version.py' || true)
           
           if [ -z "$VERSION_FILES_CHANGED" ]; then
             echo "No version-related files were changed in this PR."
@@ -95,10 +97,10 @@ jobs:
             echo "$VERSION_FILES_CHANGED"
             
             # Check if the version actually changed in pyproject.toml
-            if [ -f pyproject.toml ] && git diff origin/main..HEAD pyproject.toml | grep -q "version ="; then
+            if [ -f pyproject.toml ] && git diff origin/$TARGET_BRANCH..HEAD pyproject.toml | grep -q "version ="; then
               echo "Version was updated in pyproject.toml"
             # Check if the version actually changed in version.py
-            elif [ -f version.py ] && git diff origin/main..HEAD version.py | grep -q "__version__"; then
+            elif [ -f version.py ] && git diff origin/$TARGET_BRANCH..HEAD version.py | grep -q "__version__"; then
               echo "Version was updated in version.py"
             else
               echo "::warning::Changes detected in version files but version number might not have been updated"
