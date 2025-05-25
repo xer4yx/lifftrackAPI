@@ -1,30 +1,64 @@
-aiohttp==3.10.10
-cryptography==43.0.3
-docker==6.1.3
-matplotlib==3.8.1
-fastapi==0.115.12
-firebase_admin==6.6.0
-httpx==0.28.1
-inference
-numpy==2.2.6
-opencv_contrib_python==4.9.0.80
-opencv_python==4.9.0.80
-opencv_python_headless==4.8.0.74
-passlib==1.7.4
-Pillow==10.0.0
-pox==0.3.5
-psutil==5.9.7
-pydantic==2.11.4
-pydantic_settings==2.9.1
-pytest==8.3.3
-python-dotenv==1.1.0
-python-semantic-release==8.5.1
-python_jose==3.3.0
-requests==2.31.0
-slowapi==0.1.9
-tensorflow==2.16.1
-tensorflow_hub==0.16.1
-uvicorn
-websocket-client==1.7.0
-websockets==13.0.1
+# Web framework and HTTP clients
+fastapi>=0.115.0,<0.116.0
+uvicorn>=0.30.0,<0.31.0
+httpx>=0.28.0,<0.29.0
+aiohttp>=3.10.0,<3.11.0
+slowapi>=0.1.9,<0.2.0
+
+# Data validation and settings
+pydantic>=2.11.0,<2.12.0
+pydantic_settings>=2.9.0,<2.10.0
+
+# Authentication and security
+passlib>=1.7.4,<1.8.0
+python_jose>=3.3.0,<3.4.0
+cryptography>=43.0.0,<44.0.0
+
+# Database and Firebase
+firebase_admin>=6.6.0,<6.7.0
 git+https://github.com/ozgur/python-firebase.git#egg=python-firebase
+
+# Computer Vision and ML
+# Note: NumPy version constrained by TensorFlow 2.16.x compatibility (requires numpy<2.0.0)
+numpy>=1.23.5,<2.0.0
+opencv-python>=4.9.0,<4.10.0
+tensorflow>=2.16.0,<2.17.0
+tensorflow_hub>=0.16.0,<0.17.0
+Pillow>=10.0.0,<11.0.0
+matplotlib>=3.8.0,<3.9.0
+
+# Roboflow Inference SDK - TEMPORARILY DISABLED DUE TO NUMPY CONFLICT
+# inference-sdk>=0.50.0,<0.51.0
+# 
+# CONFLICT EXPLANATION:
+# - TensorFlow 2.16.x requires: numpy<2.0.0,>=1.23.5
+# - inference-sdk 0.50.x requires: numpy>=2.0.0,<2.3.0
+# - This creates an impossible dependency resolution
+#
+# SOLUTIONS:
+# 1. Wait for TensorFlow 2.17+ which should support NumPy 2.x
+# 2. Use roboflow package instead: pip install roboflow
+# 3. Use separate environments for TensorFlow and inference-sdk
+# 4. Downgrade to older inference versions (not recommended)
+
+# System and utilities
+docker>=6.1.0,<6.2.0
+psutil>=5.9.0,<5.10.0
+pox>=0.3.5,<0.4.0
+
+# Configuration and environment
+python-dotenv>=1.1.0,<1.2.0
+
+# WebSocket support
+websocket-client>=1.7.0,<1.8.0
+websockets>=13.0.0,<14.0.0
+
+# HTTP requests
+# Note: inference-sdk requires requests>=2.32.0
+requests>=2.31.0,<3.0.0
+
+# Testing and development
+pytest>=8.3.0,<8.4.0
+
+# Release management
+python-semantic-release>=8.5.0,<8.6.0
