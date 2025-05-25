@@ -5,7 +5,7 @@ matplotlib==3.8.1
 fastapi==0.115.12
 firebase_admin==6.6.0
 httpx==0.28.1
-inference
+inference-sdk
 numpy==2.2.6
 opencv_contrib_python==4.9.0.80
 opencv_python==4.9.0.80
