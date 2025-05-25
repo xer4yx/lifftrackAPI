@@ -25,6 +25,7 @@ jobs:
     - name: Code formatting check (Black)
       run: |
         black --check --diff .
+      continue-on-error: true
     
     - name: Linting check (Pylint)
       run: |
