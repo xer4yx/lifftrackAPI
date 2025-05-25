@@ -27,3 +27,5 @@ requirements.txt
 *.http
 
 *tests/public/
+
+.venv/
