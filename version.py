@@ -2,4 +2,4 @@
 LiftTrack API version information.
 """
 
-__version__ = "1.10.10"
+__version__ = "2.0.0"

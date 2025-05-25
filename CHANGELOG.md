@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v2.0.0 (2025-05-25)
+
+### Bug Fixes
+
+- Update inference package and Python version [skip ci]
+  ([`f3d67b9`](https://github.com/xer4yx/lifftrackAPI/commit/f3d67b9359d9726be9c5a4b0dfce37e2a42ee5d7))
+
+- Update inference package and Python version [skip ci]
+  ([`7d52277`](https://github.com/xer4yx/lifftrackAPI/commit/7d52277871f14b7c1fa18b7db292a345a75ffbe6))
+
+- **actions**: Fixed pre-commit action [skip ci]
+  ([`41b7e96`](https://github.com/xer4yx/lifftrackAPI/commit/41b7e96be49a2c88907b4743531e327f487f2fe1))
+
+- **requirements**: Fixed dependency compatibility in numpy [skip ci]
+  ([`67518dc`](https://github.com/xer4yx/lifftrackAPI/commit/67518dccae704f53aef48276f65668e66e9e4312))
+
+- **requirements**: Fixed dependency issues [skip ci]
+  ([`9fabdfd`](https://github.com/xer4yx/lifftrackAPI/commit/9fabdfd3f2a189612db1d4b463fbc1f4626366a0))
+
+- **requirements**: Fixed issues in inference-sdk compatibility [skip ci]
+  ([`9f2e560`](https://github.com/xer4yx/lifftrackAPI/commit/9f2e560250f670a9594f6c07c3a55b9c47b1e475))
+
+- **requirements**: Fixed package dependency conflicts [skip ci]
+  ([`cb71618`](https://github.com/xer4yx/lifftrackAPI/commit/cb7161843f831fa5d9e6f3369fece4c8206694e0))
+
+### Chores
+
+- Added CHANGELOG, LICENSE, and workflows
+  ([`6569647`](https://github.com/xer4yx/lifftrackAPI/commit/6569647c719fb80902b81ee16c963ce204a83d82))
+
+- Updated README and requirement
+  ([`9ed4050`](https://github.com/xer4yx/lifftrackAPI/commit/9ed40505efee18b7ac05c813c32685cc306e41ce))
+
+- **.github**: Added and updated github actions
+  ([`726e679`](https://github.com/xer4yx/lifftrackAPI/commit/726e679fadae6c7bf227a23b486112c7cc06b104))
+
+### Features
+
+- Major refactor of router components and API architecture
+  ([`3930e45`](https://github.com/xer4yx/lifftrackAPI/commit/3930e45e79a51387bae64742a0f79d3e443f90fc))
+
+
 ## v1.10.4 (2025-05-10)
 
 ### Features
