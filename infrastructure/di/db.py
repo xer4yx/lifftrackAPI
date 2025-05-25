@@ -1,7 +1,13 @@
-from typing import AsyncGenerator
-from infrastructure.database import FirebaseREST, FirebaseAdmin
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Dict, Any
+
 from lifttrack import config
 from routers.manager import HTTPConnectionPool
+
+from infrastructure.database import FirebaseREST, FirebaseAdmin
+from utils import FirebaseSettings
+
+firebase_settings = FirebaseSettings()
 
 options = {
     'databaseURL': config.get(section='Firebase', option='FIREBASE_DEV_DB'),
@@ -21,8 +27,8 @@ async def get_firebase_rest() -> AsyncGenerator[FirebaseREST, None]:
     """
     async with HTTPConnectionPool.get_session() as session:
         firebase = FirebaseREST(
-            dsn=config.get(section='Firebase', option='FIREBASE_DEV_DB'),
-            authentication=config.get(section='Firebase', option='RTDB_AUTH'),
+            dsn=firebase_settings.database_url,
+            authentication=firebase_settings.auth_token,
             session=session
         )
         try:
@@ -32,10 +38,27 @@ async def get_firebase_rest() -> AsyncGenerator[FirebaseREST, None]:
             pass
 
 
-async def get_firebase_admin() -> FirebaseAdmin:
-    firebase = FirebaseAdmin(
-        credentials_path=config.get(section='Firebase', option='ADMIN_SDK_DEV'),
-        options=options
-    )
-    return firebase
+async def get_firebase_admin() -> AsyncGenerator[FirebaseAdmin, None]:
+    try:
+        # Create a proper dictionary from our FirebaseOptions model
+        firebase_options: Dict[str, Any] = {}
+        
+        if firebase_settings.options:
+            # Convert the Pydantic model to a dictionary
+            firebase_options = firebase_settings.options.model_dump()
+        else:
+            # Fallback to the legacy hardcoded options
+            firebase_options = options
+        
+        # Ensure databaseURL is set
+        if 'databaseURL' not in firebase_options and firebase_settings.database_url:
+            firebase_options['databaseURL'] = firebase_settings.database_url
+            
+        firebase = FirebaseAdmin(
+            credentials_path=firebase_settings.admin_sdk,
+            options=firebase_options
+        )
+        yield firebase
+    finally:
+        pass
     

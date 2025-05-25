@@ -2,16 +2,18 @@ import aiohttp
 import asyncio
 from typing import Optional, Dict, Any
 from functools import wraps
-import logging
-from concurrent.futures import ThreadPoolExecutor
-from lifttrack import config
 
-logger = logging.getLogger(__name__)
+from lifttrack.utils.logging_config import setup_logger
+from utils import FirebaseSettings
+
+logger = setup_logger("lifttrack.rest_rtdb", "db.log")
 
 class RTDBHelper:
     def __init__(self, dsn=None, authentication=None, pool_size=10):
-        self.__dsn = config.get(section='Firebase', option='FIREBASE_DEV_DB') or dsn
-        self.__auth = config.get(section='Firebase', option='RTDB_AUTH') or authentication
+        firebase_settings = FirebaseSettings()
+        
+        self.__dsn = firebase_settings.database_url or dsn
+        self.__auth = firebase_settings.auth_token or authentication
         self.__pool_size = pool_size
         self.__session = None
         self.__lock = asyncio.Lock()

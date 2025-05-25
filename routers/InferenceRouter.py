@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import base64
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, Request
 from fastapi.responses import StreamingResponse
 from typing import List
 from pydantic import BaseModel
@@ -10,11 +10,6 @@ from datetime import datetime
 from lifttrack.v2.dbhelper import get_db
 from lifttrack.v2.dbhelper.admin_rtdb import FirebaseDBHelper
 from lifttrack.utils.logging_config import setup_logger
-from lifttrack.v2.comvis import (
-    movenet_inference, 
-    object_tracker, 
-    three_dim_inference
-)
 from lifttrack.v2.comvis.features import (
     extract_joint_angles, 
     extract_movement_patterns, 
@@ -23,7 +18,11 @@ from lifttrack.v2.comvis.features import (
     calculate_stability
 )
 from lifttrack.v2.comvis.progress import calculate_form_accuracy
-from lifttrack.models import Exercise, ExerciseData, Features, Object  # Import models from WebsocketRouter
+from lifttrack.models import Exercise, ExerciseData, Features, Object
+
+from core.interface import InferenceInterface
+from infrastructure.database import FirebaseAdmin
+from infrastructure.di import get_firebase_admin
 
 router = APIRouter()
 
@@ -40,12 +39,13 @@ class InferenceResponse(BaseModel):
     
 logger = setup_logger("inference", "inference.log")
 
-@router.post("/inference", response_model=InferenceResponse)
+@router.post("/inference", response_model=InferenceResponse, deprecated=True)
 async def inference_endpoint(
+    request: Request,
     video_file: UploadFile,  # Expecting a video file
     username: str = Query(...),
     exercise_name: str = Query(...),
-    db: FirebaseDBHelper = Depends(get_db)
+    db: FirebaseAdmin = Depends(get_firebase_admin)
 ):
     try:
         if not username or not exercise_name:
@@ -69,6 +69,12 @@ async def inference_endpoint(
 
         # Process each frame in the video
         while True:
+            # Get the inference services from the request
+            inference_services = request.app.state.inference_services
+            movenet_inference: InferenceInterface = inference_services.get('posenet')
+            object_tracker: InferenceInterface = inference_services.get('object_tracker')
+            three_dim_inference: InferenceInterface = inference_services.get('videoaction')
+            
             ret, frame = video.read()
             if not ret:
                 break  # Exit if no more frames
@@ -79,10 +85,10 @@ async def inference_endpoint(
             # Only process every 30th frame (1 second at 30 fps)
             if frame_count % 30 == 0:
                 # Process frame with MoveNet
-                _, curr_keypoints = movenet_inference.analyze_frame(frame)
+                _, curr_keypoints = await movenet_inference.infer_async(frame)
 
                 # Process frame with object detection
-                object_inference = object_tracker.process_frames_and_get_annotations(frame)
+                object_inference = await object_tracker.infer_async(frame)
                 if not object_inference:
                     object_inference = {
                         "class_id": -1,
@@ -92,7 +98,7 @@ async def inference_endpoint(
 
                 # Process movement classification
                 frames_buffer = [frame]  # For single frame analysis
-                predicted_class_name = three_dim_inference.predict_class(frames_buffer)
+                predicted_class_name = await three_dim_inference.infer_async(frames_buffer)
 
                 # Create features dict
                 features = {
@@ -121,10 +127,9 @@ async def inference_endpoint(
                 safe_datetime = exercise_datetime.replace(':', '-')
                 exercise_data_dict = exercise_data_base_model.model_dump()
                 time_key = f"second_{second}"  # Format time_key as second_{second}
-                user_id = db.set_data(
-                    path=f'progress/{username}/{exercise_name.lower()}/{safe_datetime}', 
-                    data=exercise_data_dict,
-                    key=time_key
+                user_id = await db.set_data(
+                    key=f'progress/{username}/{exercise_name.lower()}/{safe_datetime}/{time_key}', 
+                    value=exercise_data_dict
                 )
 
                 _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
