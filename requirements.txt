@@ -27,8 +27,19 @@ tensorflow_hub>=0.16.0,<0.17.0
 Pillow>=10.0.0,<11.0.0
 matplotlib>=3.8.0,<3.9.0
 
-# Roboflow Inference SDK
-inference-sdk>=0.50.0,<0.51.0
+# Roboflow Inference SDK - TEMPORARILY DISABLED DUE TO NUMPY CONFLICT
+# inference-sdk>=0.50.0,<0.51.0
+# 
+# CONFLICT EXPLANATION:
+# - TensorFlow 2.16.x requires: numpy<2.0.0,>=1.23.5
+# - inference-sdk 0.50.x requires: numpy>=2.0.0,<2.3.0
+# - This creates an impossible dependency resolution
+#
+# SOLUTIONS:
+# 1. Wait for TensorFlow 2.17+ which should support NumPy 2.x
+# 2. Use roboflow package instead: pip install roboflow
+# 3. Use separate environments for TensorFlow and inference-sdk
+# 4. Downgrade to older inference versions (not recommended)
 
 # System and utilities
 docker>=6.1.0,<6.2.0
@@ -43,7 +54,8 @@ websocket-client>=1.7.0,<1.8.0
 websockets>=13.0.0,<14.0.0
 
 # HTTP requests
-requests>=2.31.0,<2.32.0
+# Note: inference-sdk requires requests>=2.32.0
+requests>=2.31.0,<3.0.0
 
 # Testing and development
 pytest>=8.3.0,<8.4.0
