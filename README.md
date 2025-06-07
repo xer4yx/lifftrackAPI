@@ -1,8 +1,12 @@
 # LiftTrack API
 
-![Logo](logo.jpg)
+<img src="logo.jpg" width="700" height="100" />
 
 **Version:** `v1.10.4` *(Auto-loaded from `version.py`)*
+
+[![Run Tests](https://github.com/xer4yx/lifftrackAPI/actions/workflows/run-tests.yml/badge.svg)](https://github.com/xer4yx/lifftrackAPI/actions/workflows/run-tests.yml) [![Pre-commit checks](https://github.com/xer4yx/lifftrackAPI/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/xer4yx/lifftrackAPI/actions/workflows/pre-commit.yml)
+
+[![Version Check](https://github.com/xer4yx/lifftrackAPI/actions/workflows/version-check.yml/badge.svg)](https://github.com/xer4yx/lifftrackAPI/actions/workflows/version-check.yml) [![Auto Version Bump](https://github.com/xer4yx/lifftrackAPI/actions/workflows/auto-version-bump.yml/badge.svg)](https://github.com/xer4yx/lifftrackAPI/actions/workflows/auto-version-bump.yml)
 
 LiftTrack API is a powerful backend service designed for fitness enthusiasts and strength athletes to effectively track their weightlifting progress. It provides endpoints to manage workouts, exercises, performance logs, and personal records with modern best practices and robust security features.
 
@@ -11,24 +15,29 @@ LiftTrack API is a powerful backend service designed for fitness enthusiasts and
 ## 🚀 Features
 
 ### 👤 User Management
+
 - Secure user registration and login
 - Profile management
 - User data management support
 
 ### 🏋️ Weightlifting Management
+
 - CRUD and WebSocket operations for weightlifting
 - Log dates, durations, and weightlifting data
 - Workout categorization (e.g., Upper Body, Lower Body)
 
 ### 📝 Exercise Tracking
+
 - Record suggestions, and body angles
 - Track rest periods and variations
 - Detailed logging for each workout
 
 ### 📈 Progress Monitoring
+
 - View historical performance data
 
 ### 🔐 Security
+
 - Token-based authentication
 - Encrypted passwords
 - Protected API routes

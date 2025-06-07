@@ -7,9 +7,8 @@ slowapi>=0.1.9,<0.2.0
 python-multipart>=0.0.9
 
 # Data validation and settings
-pydantic>=2.9.2,<2.12.0
+pydantic[email]>=2.9.2,<2.12.0
 pydantic_settings>=2.5.2,<2.10.0
-email_validator>=2.2.0
 
 # Authentication and security
 passlib>=1.7.4,<1.8.0

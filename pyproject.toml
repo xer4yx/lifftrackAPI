@@ -67,3 +67,29 @@ insecure = false
 dist_glob_patterns = ["dist/*"]
 upload_to_vcs_release = true
 
+[tool.black]
+target-version=["py311"]
+exclude='''
+/(
+    \.direnv
+    |\.eggs
+    |\.git
+    |\.hg
+    |\.ipynb_checkpoints
+    |\.mypy_cache
+    |\.nox
+    |\.pytest_cache
+    |\.ruff_cache
+    |\.tox
+    |\.svn
+    |\.venv
+    |\.vscode
+    |__pypackages__
+    |_build
+    |buck-out
+    |build
+    |dist
+    |venv
+    |lifttrack
+    |routers
+)/'''
