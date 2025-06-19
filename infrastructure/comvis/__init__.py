@@ -13,5 +13,5 @@ __all__ = [
     "FormAnalysisRepository",
     "FrameRepository",
     "WeightliftDataRepository",
-    "FeatureRepository"
-] 
+    "FeatureRepository",
+]

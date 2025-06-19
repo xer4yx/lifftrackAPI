@@ -1,13 +1,5 @@
 import threading
-from fastapi import (
-    FastAPI, 
-    Depends, 
-    HTTPException, 
-    status,
-    Request,
-    Response,
-    Query
-)
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Response, Query
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -51,10 +43,7 @@ from interface.ws import websocket_router_v3 as v3_websocket_router
 app_settings = AppSettings()
 cors_settings = CorsSettings()
 
-app = FastAPI(
-    title=app_settings.name, 
-    version=app_settings.version, 
-    lifespan=lifespan)
+app = FastAPI(title=app_settings.name, version=app_settings.version, lifespan=lifespan)
 
 # v1 API Routers
 app.include_router(users_router)
@@ -79,7 +68,7 @@ app.add_middleware(
     allow_methods=cors_settings.allowed_methods,
     allow_headers=cors_settings.allowed_headers,
     allow_credentials=cors_settings.allow_credentials,
-    expose_headers=cors_settings.expose_headers
+    expose_headers=cors_settings.expose_headers,
 )
 # Add SlowAPI middleware
 app.add_middleware(SlowAPIMiddleware)
@@ -93,10 +82,12 @@ system_logger = setup_logger("system", "server_resource.log")
 
 # Start resource monitoring
 start_resource_monitoring(system_logger, log_cpu_and_mem_usage, 60)
-    
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse(path="./favicon.ico", media_type="image/x-icon")
+
 
 # API Endpoint [ROOT]
 @app.get("/")
@@ -105,26 +96,24 @@ async def read_root(request: Request, response: Response):
     """Lifttrack API root endpoint."""
     try:
         return JSONResponse(
-            content={"msg": "Welcome to LiftTrack!"},
-            status_code=status.HTTP_200_OK
+            content={"msg": "Welcome to LiftTrack!"}, status_code=status.HTTP_200_OK
         )
     except HTTPException as httpe:
         return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
+            content={"msg": httpe.detail}, status_code=httpe.status_code
         )
     except Exception as e:
         logger.exception(f"Error in read_root: {e}")
         return JSONResponse(
             content={"msg": "Internal server error"},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     finally:
         log_network_io(
-            logger=network_logger, 
-            endpoint=request.url, 
-            method=request.method, 
-            response_status=response.status_code
+            logger=network_logger,
+            endpoint=request.url,
+            method=request.method,
+            response_status=response.status_code,
         )
 
 
@@ -135,60 +124,57 @@ async def get_app_info(request: Request, response: Response, appinfo: AppInfo):
     """Endpoint to get information about the app."""
     try:
         return JSONResponse(
-            content=jsonable_encoder(appinfo),
-            status_code=status.HTTP_200_OK
+            content=jsonable_encoder(appinfo), status_code=status.HTTP_200_OK
         )
     except HTTPException as httpe:
         return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
+            content={"msg": httpe.detail}, status_code=httpe.status_code
         )
     except Exception as e:
         logger.exception(f"Error in get_app_info: {e}")
         return JSONResponse(
             content={"msg": "Internal server error"},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     finally:
         log_network_io(
-            logger=network_logger, 
-            endpoint=request.url, 
-            method=request.method, 
-            response_status=response.status_code
+            logger=network_logger,
+            endpoint=request.url,
+            method=request.method,
+            response_status=response.status_code,
         )
 
 
 @app.get("/app-update")
 @limiter.limit("20/minute")
 async def get_app_update(
-    request: Request, 
-    response: Response, 
+    request: Request,
+    response: Response,
     current_version: str = Query(...),
-    db: FirebaseREST = Depends(get_firebase_rest)
+    db: FirebaseREST = Depends(get_firebase_rest),
 ):
     """Endpoint to check for app updates and get login messages."""
     try:
         # Get the latest version and messages from Firebase
         app_config = await db.get_data(key=f"app_config")
-              
+
         # Create AppUpdate response
         app_update = AppUpdate(
             current_version=current_version,
             latest_version=app_config.get("latest_version", current_version),
-            update_available=app_config.get("latest_version", current_version) != current_version,
+            update_available=app_config.get("latest_version", current_version)
+            != current_version,
             update_message=app_config.get("update_message", ""),
             download_url=app_config.get("download_url", ""),
-            login_message=app_config.get("login_message", "")
+            login_message=app_config.get("login_message", ""),
         )
 
         return JSONResponse(
-            content=jsonable_encoder(app_update),
-            status_code=status.HTTP_200_OK
+            content=jsonable_encoder(app_update), status_code=status.HTTP_200_OK
         )
     except HTTPException as httpe:
         return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
+            content={"msg": httpe.detail}, status_code=httpe.status_code
         )
     except Exception as e:
         logger.exception(f"Error in get_app_update: {e}")
@@ -199,25 +185,29 @@ async def get_app_update(
             update_available=False,
             update_message="",
             download_url="",
-            login_message=""
+            login_message="",
         )
         return JSONResponse(
-            content=jsonable_encoder(app_update),
-            status_code=status.HTTP_200_OK
+            content=jsonable_encoder(app_update), status_code=status.HTTP_200_OK
         )
     finally:
         log_network_io(
-            logger=network_logger, 
-            endpoint=request.url, 
-            method=request.method, 
-            response_status=response.status_code
+            logger=network_logger,
+            endpoint=request.url,
+            method=request.method,
+            response_status=response.status_code,
         )
 
 
 # API Endpoint [Authentication Operations]
 @app.post("/login")
 @limiter.limit("3/minute")  # Limit login attempts
-async def login(login_form: LoginForm, request: Request, response: Response, db: FirebaseREST = Depends(get_firebase_rest)):
+async def login(
+    login_form: LoginForm,
+    request: Request,
+    response: Response,
+    db: FirebaseREST = Depends(get_firebase_rest),
+):
     """
     API endpoint for user login.
 
@@ -230,47 +220,45 @@ async def login(login_form: LoginForm, request: Request, response: Response, db:
 
         if user_data is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
         if not verify_password(login_form.password, user_data.get("password", "")):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password"
+                detail="Invalid username or password",
             )
 
         return JSONResponse(
             content={"message": "Login successful", "success": True},
-            status_code=status.HTTP_200_OK
+            status_code=status.HTTP_200_OK,
         )
     except HTTPException as httpe:
         return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
+            content={"msg": httpe.detail}, status_code=httpe.status_code
         )
     except Exception as e:
         logger.exception(f"Error in login: {e}")
         return JSONResponse(
             content={"msg": "Internal server error"},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     finally:
         log_network_io(
-            logger=network_logger, 
-            endpoint=request.url, 
-            method=request.method, 
-            response_status=response.status_code
+            logger=network_logger,
+            endpoint=request.url,
+            method=request.method,
+            response_status=response.status_code,
         )
 
 
 @app.post("/token", response_model=Token)
 @limiter.limit("10/minute")  # Limit token requests
 async def login_for_access_token(
-    request: Request, 
-    response: Response, 
+    request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: FirebaseREST = Depends(get_firebase_rest)
+    db: FirebaseREST = Depends(get_firebase_rest),
 ):
     """
     Endpoint to get an access token.
@@ -284,14 +272,13 @@ async def login_for_access_token(
 
         if user is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
         if not verify_password(form_data.password, user.get("password", "")):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password"
+                detail="Invalid username or password",
             )
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
@@ -299,30 +286,29 @@ async def login_for_access_token(
         )
         return JSONResponse(
             content={
-                "access_token": access_token, 
+                "access_token": access_token,
                 "token_type": "bearer",
-                "message": "Login successful", 
-                "success": True
+                "message": "Login successful",
+                "success": True,
             },
-            status_code=status.HTTP_200_OK
+            status_code=status.HTTP_200_OK,
         )
     except HTTPException as httpe:
         return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
+            content={"msg": httpe.detail}, status_code=httpe.status_code
         )
     except Exception as e:
         logger.exception(f"Error in login_for_access_token: {e}")
         return JSONResponse(
             content={"msg": "Internal server error"},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     finally:
         log_network_io(
-            logger=network_logger, 
-            endpoint=request.url, 
-            method=request.method, 
-            response_status=response.status_code
+            logger=network_logger,
+            endpoint=request.url,
+            method=request.method,
+            response_status=response.status_code,
         )
 
 
@@ -336,28 +322,29 @@ async def logout(request: Request, response: Response):
         # TODO: Add token revocation
         # You might want to add the token to a blacklist here if implementing token revocation
         return JSONResponse(
-            content={"msg": "Successfully logged out"},
-            status_code=status.HTTP_200_OK
+            content={"msg": "Successfully logged out"}, status_code=status.HTTP_200_OK
         )
     except Exception as e:
         logger.exception(f"Error in logout: {e}")
         return JSONResponse(
             content={"msg": "Internal server error"},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     finally:
         log_network_io(
-            logger=network_logger, 
-            endpoint=request.url, 
-            method=request.method, 
-            response_status=response.status_code
+            logger=network_logger,
+            endpoint=request.url,
+            method=request.method,
+            response_status=response.status_code,
         )
 
 
 # API Endpoint [RTDB Operations]
 @app.get("/users/me/")
 @limiter.limit("30/minute")
-async def read_users_me(request: Request, response: Response, current_user: User = Depends(get_current_user)):
+async def read_users_me(
+    request: Request, response: Response, current_user: User = Depends(get_current_user)
+):
     """
     Endpoint to get the current user.
 
@@ -367,24 +354,23 @@ async def read_users_me(request: Request, response: Response, current_user: User
     """
     try:
         return JSONResponse(
-            content=current_user.model_dump(),
-            status_code=status.HTTP_200_OK
+            content=current_user.model_dump(), status_code=status.HTTP_200_OK
         )
     except Exception as e:
         logger.exception(f"Error in read_users_me: {e}")
         return JSONResponse(
             content={"msg": "Internal server error"},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     finally:
         log_network_io(
-            logger=network_logger, 
-            endpoint=request.url, 
-            method=request.method, 
-            response_status=response.status_code
+            logger=network_logger,
+            endpoint=request.url,
+            method=request.method,
+            response_status=response.status_code,
         )
-        
-        
+
+
 @app.get("/ping")
 @limiter.limit("10/minute")
 async def ping(request: Request, response: Response):
@@ -393,14 +379,12 @@ async def ping(request: Request, response: Response):
         return JSONResponse(content={"status": "ok"}, status_code=status.HTTP_200_OK)
     except HTTPException as httpe:
         return JSONResponse(
-            content={"msg": httpe.detail},
-            status_code=httpe.status_code
+            content={"msg": httpe.detail}, status_code=httpe.status_code
         )
     finally:
         log_network_io(
-            logger=network_logger, 
-            endpoint=request.url, 
-            method=request.method, 
-            response_status=response.status_code
+            logger=network_logger,
+            endpoint=request.url,
+            method=request.method,
+            response_status=response.status_code,
         )
-     

@@ -9,13 +9,13 @@ from .feature_repository_interface import FeatureRepositoryInterface
 from .frame_repository_interface import FrameRepositoryInterface
 
 __all__ = [
-    "NTFInterface", 
+    "NTFInterface",
     "InferenceInterface",
     "PoseFeatureInterface",
     "FormAnalysisInterface",
-    'AuthenticationInterface',
-    'TokenBlacklistRepository',
-    'DataHandlerInterface',
-    'FeatureRepositoryInterface',
-    'FrameRepositoryInterface'
+    "AuthenticationInterface",
+    "TokenBlacklistRepository",
+    "DataHandlerInterface",
+    "FeatureRepositoryInterface",
+    "FrameRepositoryInterface",
 ]
