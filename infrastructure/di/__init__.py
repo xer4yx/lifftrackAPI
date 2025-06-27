@@ -9,7 +9,9 @@ from .comvis import (
     get_form_analysis_repository,
     get_frame_repository,
     get_feature_repository,
+    get_feature_metric_repository,
     get_data_repository,
+    get_feature_metrics_data_repository,
 )
 from .repositories import get_user_repository
 from .auth import (
@@ -30,6 +32,8 @@ __all__ = [
     "get_form_analysis_repository",
     "get_frame_repository",
     "get_feature_repository",
+    "get_feature_metrics_data_repository",
+    "get_feature_metric_repository",
     "get_data_repository",
     "get_user_repository",
     "get_authenticator",

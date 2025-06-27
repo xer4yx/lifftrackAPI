@@ -16,6 +16,7 @@ from .auth_entity import (
     CredentialsEntity,
     ValidationResultEntity,
 )
+from .metrics_entity import FeatureMetrics
 
 __all__ = [
     "UserEntity",
@@ -32,4 +33,5 @@ __all__ = [
     "TokenBlacklistEntity",
     "CredentialsEntity",
     "ValidationResultEntity",
+    "FeatureMetrics",
 ]

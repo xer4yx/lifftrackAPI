@@ -4,13 +4,14 @@ from typing import Dict, Any, Tuple, Optional, List
 import numpy as np
 
 from core.entities.pose_entity import KeypointCollection, PoseFeatures, FormAnalysis
-from core.entities import Object, Keypoint
+from core.entities import Object, Keypoint, BodyAlignment, FeatureMetrics
 from core.interface import (
     PoseFeatureInterface,
     FormAnalysisInterface,
     DataHandlerInterface,
     FrameRepositoryInterface,
     FeatureRepositoryInterface,
+    FeatureMetricRepositoryInterface,
 )
 
 
@@ -372,3 +373,121 @@ class ComVisUseCase:
             Formatted date string
         """
         return self.data_handler.format_date(date_string)
+
+
+class FeatureMetricUseCase:
+    """
+    Use case for feature metric functionality.
+    Handles the extraction of feature metrics.
+    """
+
+    def __init__(
+        self,
+        feature_metric_repository: FeatureMetricRepositoryInterface,
+        data_handler: DataHandlerInterface,
+    ):
+        self.feature_metric_repo = feature_metric_repository
+        self.data_handler = data_handler
+
+    def compute_body_alignment(
+        self, body_alignment: BodyAlignment, max_allowed_deviation: int = 10
+    ) -> float:
+        """
+        Compute body alignment.
+        """
+        return self.feature_metric_repo.compute_ba_score(
+            body_alignment, max_allowed_deviation
+        )
+
+    def compute_joint_consistency(
+        self, joint_angles: Dict[str, float], max_allowed_variance: int = 15
+    ) -> float:
+        """
+        Compute joint consistency.
+        """
+        return self.feature_metric_repo.compute_jc_score(
+            joint_angles, max_allowed_variance
+        )
+
+    def compute_load_control(
+        self, objects: Dict[str, Any], max_allowed_variance: int = 15
+    ) -> float:
+        """
+        Compute load control.
+        """
+        return self.feature_metric_repo.compute_lc_score(objects, max_allowed_variance)
+
+    def compute_speed_control(
+        self, speeds: Dict[str, float], max_jerk: float = 5.0
+    ) -> float:
+        """
+        Compute speed control.
+        """
+        return self.feature_metric_repo.compute_sc_score(speeds, max_jerk)
+
+    def compute_overall_stability(
+        self, stability_raw: float, max_displacement: float = 20.0
+    ) -> float:
+        """
+        Compute overall stability.
+        """
+        return self.feature_metric_repo.compute_os_score(
+            stability_raw, max_displacement
+        )
+
+    def compute_feature_metrics(
+        self,
+        body_alignment: BodyAlignment,
+        joint_angles: Dict[str, float],
+        objects: Dict[str, Any],
+        speeds: Dict[str, float],
+        stability_raw: float,
+        max_allowed_deviation: int = 10,
+        max_allowed_variance: int = 15,
+        max_jerk: float = 5.0,
+        max_displacement: float = 20.0,
+    ) -> Any:
+        """
+        Compute feature metrics.
+        """
+        metrics = self.data_handler.load_to_data_model(
+            body_alignment=self.feature_metric_repo.compute_ba_score(
+                body_alignment, max_allowed_deviation
+            ),
+            joint_consistency=self.feature_metric_repo.compute_jc_score(
+                joint_angles, max_allowed_variance
+            ),
+            load_control=self.feature_metric_repo.compute_lc_score(
+                objects, max_allowed_variance
+            ),
+            speed_control=self.feature_metric_repo.compute_sc_score(speeds, max_jerk),
+            overall_stability=self.feature_metric_repo.compute_os_score(
+                stability_raw, max_displacement
+            ),
+        )
+
+        return metrics
+
+    async def save_feature_metrics(
+        self,
+        username: str,
+        exercise_name: str,
+        feature_metrics: FeatureMetrics | Dict[str, Any],
+    ) -> None:
+        """
+        Save feature metrics to the database using FeatureMetricsDataRepository.
+
+        Args:
+            username: User's username
+            exercise_name: Exercise name
+            feature_metrics: Feature metrics to save
+            db: Database interface
+        """
+        if isinstance(feature_metrics, FeatureMetrics):
+            return await self.data_handler.save_data(
+                username, exercise_name, feature_metrics.model_dump()
+            )
+        else:
+            return await self.data_handler.save_data(
+                username, exercise_name, feature_metrics
+            )

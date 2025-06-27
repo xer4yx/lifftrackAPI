@@ -2,17 +2,25 @@ import asyncio
 import concurrent.futures
 from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
-from functools import partial
 from fastapi.encoders import jsonable_encoder
 from typing import Any, List
 
+from .constant import EXERCISE_THRESHOLDS
+
+from core.entities import BodyAlignment
 from core.interface import NTFInterface
-from core.usecase import AuthUseCase
-from core.usecase.comvis_usecase import ComVisUseCase
-from core.usecase import InferenceUseCase
+from core.usecase import (
+    AuthUseCase,
+    ComVisUseCase,
+    FeatureMetricUseCase,
+    InferenceUseCase,
+)
+
 from infrastructure.di import get_firebase_admin
+
 from interface.di import get_auth_service, get_comvis_usecase
 from interface.di.inference_service import get_inference_usecase
+from interface.di.comvis_service_di import get_feature_metric_usecase
 from interface.ws.websocket_auth import (
     authenticate_websocket_query_param,
     authenticate_websocket_subprotocol,
@@ -42,6 +50,7 @@ async def livestream_exercise_tracking(
     auth_service: AuthUseCase = Depends(get_auth_service),
     comvis_service: ComVisUseCase = Depends(get_comvis_usecase),
     inference_service: InferenceUseCase = Depends(get_inference_usecase),
+    feature_metric_service: FeatureMetricUseCase = Depends(get_feature_metric_usecase),
     db: NTFInterface = Depends(get_firebase_admin),
 ):
     """
@@ -85,13 +94,26 @@ async def livestream_exercise_tracking(
     connection_active = True
     saved_seconds = set()
 
+    # Initialize metrics accumulation variables
+    accumulated_body_alignments = []
+    accumulated_joint_angles = []
+    accumulated_objects = []
+    accumulated_speeds = []
+    accumulated_stability_values = []
+
     # Preprocess exercise name
     exercise_name = exercise_name.lower().replace(" ", "_")
+
+    # Get thresholds for current exercise or use default
+    current_thresholds = EXERCISE_THRESHOLDS.get(
+        exercise_name, EXERCISE_THRESHOLDS["default"]
+    )
 
     async def analyze_buffer(
         frames_buffer: List[Any], current_frame_count: int, second_number: int
     ):
         """Analyze the buffer of frames and send results using optimized sequential processing"""
+        nonlocal accumulated_body_alignments, accumulated_joint_angles, accumulated_objects, accumulated_speeds, accumulated_stability_values
         loop = asyncio.get_running_loop()
 
         try:
@@ -159,7 +181,63 @@ async def livestream_exercise_tracking(
                 features, exercise_name
             )
 
-            # Create exercise data model
+            # Accumulate real feature metrics data for final computation
+            if hasattr(features, "body_alignment") and features.body_alignment:
+                accumulated_body_alignments.append(features.body_alignment)
+            if hasattr(features, "joint_angles") and features.joint_angles:
+                accumulated_joint_angles.append(features.joint_angles)
+            if hasattr(features, "objects") and features.objects:
+                accumulated_objects.append(features.objects)
+            if hasattr(features, "speeds") and features.speeds:
+                accumulated_speeds.append(features.speeds)
+            if hasattr(features, "stability") and features.stability is not None:
+                accumulated_stability_values.append(features.stability)
+
+            # Compute metrics incrementally for every 30th frame to build up history
+            if current_frame_count % 30 == 0 and len(accumulated_body_alignments) > 0:
+                try:
+                    # Use the most recent accumulated data to update the metric service's internal deques
+                    latest_body_alignment = accumulated_body_alignments[-1]
+                    latest_joint_angles = (
+                        accumulated_joint_angles[-1] if accumulated_joint_angles else {}
+                    )
+                    latest_objects = (
+                        accumulated_objects[-1] if accumulated_objects else {}
+                    )
+                    latest_speeds = accumulated_speeds[-1] if accumulated_speeds else {}
+                    latest_stability = (
+                        accumulated_stability_values[-1]
+                        if accumulated_stability_values
+                        else 0.0
+                    )
+
+                    # Feed real data to the feature metric service to build history
+                    feature_metric_service.compute_body_alignment(
+                        latest_body_alignment,
+                        current_thresholds["max_allowed_deviation"],
+                    )
+                    feature_metric_service.compute_joint_consistency(
+                        latest_joint_angles, current_thresholds["max_allowed_variance"]
+                    )
+                    feature_metric_service.compute_load_control(
+                        latest_objects, current_thresholds["max_allowed_variance"]
+                    )
+                    feature_metric_service.compute_speed_control(
+                        latest_speeds, current_thresholds["max_jerk"]
+                    )
+                    feature_metric_service.compute_overall_stability(
+                        latest_stability, current_thresholds["max_displacement"]
+                    )
+
+                    logger.info(
+                        f"Updated feature metrics history at frame {current_frame_count}"
+                    )
+                except Exception as metrics_error:
+                    logger.error(
+                        f"Error updating feature metrics history: {str(metrics_error)}"
+                    )
+
+            # Create exercise data model (without feature metrics - they'll be saved at session end)
             exercise_data_base_model = comvis_service.load_exercise_data(
                 frame_index=str(current_frame_count),
                 features=features,
@@ -324,3 +402,58 @@ async def livestream_exercise_tracking(
             inference_service.clear_caches()
         except Exception as e:
             logger.error(f"Error clearing inference caches: {str(e)}")
+
+        # Save final feature metrics using accumulated data from the session
+        try:
+            if accumulated_body_alignments and len(accumulated_body_alignments) > 0:
+                # Use the most recent accumulated data for the final computation
+                final_body_alignment = accumulated_body_alignments[-1]
+                final_joint_angles = (
+                    accumulated_joint_angles[-1] if accumulated_joint_angles else {}
+                )
+                final_objects = accumulated_objects[-1] if accumulated_objects else {}
+                final_speeds = accumulated_speeds[-1] if accumulated_speeds else {}
+                final_stability = (
+                    accumulated_stability_values[-1]
+                    if accumulated_stability_values
+                    else 0.0
+                )
+
+                # Compute final metrics using the real accumulated data and the service's deque history
+                final_metrics = (
+                    feature_metric_service.feature_metric_repo.compute_all_metrics(
+                        body_alignment=final_body_alignment,
+                        joint_angles=final_joint_angles,
+                        objects=final_objects,
+                        speeds=final_speeds,
+                        stability_raw=final_stability,
+                        max_allowed_deviation=current_thresholds[
+                            "max_allowed_deviation"
+                        ],
+                        max_allowed_variance=current_thresholds["max_allowed_variance"],
+                        max_jerk=current_thresholds["max_jerk"],
+                        max_displacement=current_thresholds["max_displacement"],
+                    )
+                )
+
+                # Save the final metrics to the database
+                await feature_metric_service.save_feature_metrics(
+                    username, exercise_name.replace("_", " "), final_metrics
+                )
+                logger.info(
+                    f"Final feature metrics saved for {username} - {exercise_name}: {final_metrics}"
+                )
+            else:
+                logger.warning(
+                    f"No accumulated data available for final metrics computation - session too short or no valid frames"
+                )
+
+        except Exception as e:
+            logger.error(f"Error saving final feature metrics: {str(e)}")
+
+        # Reset feature metrics history for the next session
+        try:
+            feature_metric_service.feature_metric_repo.reset_history()
+            logger.info("Feature metrics history reset for new session")
+        except Exception as e:
+            logger.error(f"Error resetting feature metrics history: {str(e)}")

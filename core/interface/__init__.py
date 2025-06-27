@@ -7,6 +7,8 @@ from .token_blacklist_interface import TokenBlacklistRepository
 from .data_handler_interface import DataHandlerInterface
 from .feature_repository_interface import FeatureRepositoryInterface
 from .frame_repository_interface import FrameRepositoryInterface
+from .feature_metric_interface import FeatureMetricInterface
+from .feature_metric_repository_interface import FeatureMetricRepositoryInterface
 
 __all__ = [
     "NTFInterface",
@@ -18,4 +20,6 @@ __all__ = [
     "DataHandlerInterface",
     "FeatureRepositoryInterface",
     "FrameRepositoryInterface",
+    "FeatureMetricInterface",
+    "FeatureMetricRepositoryInterface",
 ]

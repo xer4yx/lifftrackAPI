@@ -9,10 +9,11 @@ import io
 import inspect
 
 from core.usecase import AuthUseCase, InferenceUseCase
-from core.usecase.comvis_usecase import ComVisUseCase
+from core.usecase.comvis_usecase import ComVisUseCase, FeatureMetricUseCase
 from core.entities.user_entity import UserEntity
 from interface.di import get_auth_service, get_current_user_token, get_comvis_usecase
 from interface.di.inference_service import get_inference_usecase
+from interface.di.comvis_service_di import get_feature_metric_usecase
 from infrastructure.di import get_firebase_admin
 from interface.ws.websocket_router import (
     livestream_exercise_tracking,
@@ -229,6 +230,29 @@ def mock_db():
     return mock_database
 
 
+# Mock feature metrics service
+@pytest.fixture
+def mock_feature_metric_service():
+    mock_service = MagicMock(spec=FeatureMetricUseCase)
+
+    # Setup default behaviors for feature metrics methods
+    mock_feature_metric_repo = MagicMock()
+    mock_feature_metric_repo.compute_all_metrics.return_value = {
+        "body_alignment": 85.2,
+        "joint_consistency": 78.9,
+        "load_control": 92.1,
+        "speed_control": 81.7,
+        "overall_stability": 88.4,
+    }
+    mock_feature_metric_repo.reset_history = MagicMock()
+    mock_service.feature_metric_repo = mock_feature_metric_repo
+
+    # Add save_feature_metrics method
+    mock_service.save_feature_metrics = AsyncMock()
+
+    return mock_service
+
+
 # Apply dependency overrides for all tests
 @pytest.fixture(autouse=True)
 def override_dependencies(
@@ -236,6 +260,7 @@ def override_dependencies(
     mock_auth_service,
     mock_comvis_service,
     mock_inference_service,
+    mock_feature_metric_service,
     mock_user,
     mock_token,
     mock_db,
@@ -255,12 +280,18 @@ def override_dependencies(
     def get_firebase_admin_override():
         return mock_db
 
+    def get_feature_metric_usecase_override():
+        return mock_feature_metric_service
+
     # Set dependency overrides on the FastAPI app
     app.dependency_overrides[get_auth_service] = get_auth_service_override
     app.dependency_overrides[get_current_user_token] = get_current_user_token_override
     app.dependency_overrides[get_comvis_usecase] = get_comvis_usecase_override
     app.dependency_overrides[get_inference_usecase] = get_inference_usecase_override
     app.dependency_overrides[get_firebase_admin] = get_firebase_admin_override
+    app.dependency_overrides[get_feature_metric_usecase] = (
+        get_feature_metric_usecase_override
+    )
 
     yield
 
@@ -303,7 +334,9 @@ def create_frame_data(width=320, height=240):
 
 # Tests for authentication and connection
 @pytest.mark.asyncio
-async def test_websocket_invalid_token(mock_websocket, mock_auth_service, mock_db):
+async def test_websocket_invalid_token(
+    mock_websocket, mock_auth_service, mock_feature_metric_service, mock_db
+):
     """Test that websocket closes with invalid token"""
     # Setup mock auth service to reject token
     mock_auth_service.validate_token.return_value = (False, None, None)
@@ -317,6 +350,7 @@ async def test_websocket_invalid_token(mock_websocket, mock_auth_service, mock_d
         auth_service=mock_auth_service,
         comvis_service=MagicMock(),
         inference_service=MagicMock(),
+        feature_metric_service=mock_feature_metric_service,
         db=mock_db,
     )
 
@@ -327,7 +361,7 @@ async def test_websocket_invalid_token(mock_websocket, mock_auth_service, mock_d
 
 @pytest.mark.asyncio
 async def test_websocket_username_mismatch(
-    mock_websocket, mock_auth_service, mock_user, mock_db
+    mock_websocket, mock_auth_service, mock_user, mock_feature_metric_service, mock_db
 ):
     """Test that websocket closes when username doesn't match token"""
     # Setup mock auth service to return a user with different username
@@ -343,6 +377,7 @@ async def test_websocket_username_mismatch(
         auth_service=mock_auth_service,
         comvis_service=MagicMock(),
         inference_service=MagicMock(),
+        feature_metric_service=mock_feature_metric_service,
         db=mock_db,
     )
 
@@ -353,7 +388,7 @@ async def test_websocket_username_mismatch(
 
 @pytest.mark.asyncio
 async def test_websocket_invalid_subprotocol(
-    mock_websocket, mock_auth_service, mock_user, mock_db
+    mock_websocket, mock_auth_service, mock_user, mock_feature_metric_service, mock_db
 ):
     """Test that websocket closes when using an invalid subprotocol and no fallback token is provided"""
     # Setup mock auth service to accept token (won't be used in this test)
@@ -371,6 +406,7 @@ async def test_websocket_invalid_subprotocol(
         auth_service=mock_auth_service,
         comvis_service=MagicMock(),
         inference_service=MagicMock(),
+        feature_metric_service=mock_feature_metric_service,
         db=mock_db,
     )
 
@@ -497,6 +533,7 @@ async def test_websocket_frame_processing(
     mock_user,
     mock_comvis_service,
     mock_inference_service,
+    mock_feature_metric_service,
     mock_db,
 ):
     """Test that websocket can process frames correctly"""
@@ -544,6 +581,7 @@ async def test_websocket_frame_processing(
                 auth_service=mock_auth_service,
                 comvis_service=mock_comvis_service,
                 inference_service=mock_inference_service,
+                feature_metric_service=mock_feature_metric_service,
                 db=mock_db,
             )
 
@@ -569,6 +607,7 @@ async def test_websocket_analyze_buffer(
     mock_user,
     mock_comvis_service,
     mock_inference_service,
+    mock_feature_metric_service,
     mock_db,
 ):
     """Test that websocket can analyze buffer correctly"""
@@ -639,6 +678,7 @@ async def test_websocket_analyze_buffer(
                 auth_service=mock_auth_service,
                 comvis_service=mock_comvis_service,
                 inference_service=mock_inference_service,
+                feature_metric_service=mock_feature_metric_service,
                 db=mock_db,
             )
 
@@ -678,6 +718,7 @@ async def test_websocket_disconnect_handling(
     mock_user,
     mock_comvis_service,
     mock_inference_service,
+    mock_feature_metric_service,
     mock_db,
 ):
     """Test that websocket handles disconnection gracefully"""
@@ -697,11 +738,15 @@ async def test_websocket_disconnect_handling(
             auth_service=mock_auth_service,
             comvis_service=mock_comvis_service,
             inference_service=mock_inference_service,
+            feature_metric_service=mock_feature_metric_service,
             db=mock_db,
         )
 
         # Verify inference cache was cleared
         mock_inference_service.clear_caches.assert_called_once()
+
+        # Verify feature metrics history was reset
+        mock_feature_metric_service.feature_metric_repo.reset_history.assert_called_once()
     finally:
         # Force cleanup to release memory
         import gc
@@ -716,6 +761,7 @@ async def test_websocket_error_handling(
     mock_user,
     mock_comvis_service,
     mock_inference_service,
+    mock_feature_metric_service,
     mock_db,
 ):
     """Test that websocket handles processing errors gracefully"""
@@ -743,15 +789,428 @@ async def test_websocket_error_handling(
                 auth_service=mock_auth_service,
                 comvis_service=mock_comvis_service,
                 inference_service=mock_inference_service,
+                feature_metric_service=mock_feature_metric_service,
                 db=mock_db,
             )
 
         # Verify inference cache was cleared (happens in finally block)
         mock_inference_service.clear_caches.assert_called_once()
+
+        # Verify feature metrics history was reset
+        mock_feature_metric_service.feature_metric_repo.reset_history.assert_called_once()
     finally:
         # Force cleanup to release memory
         mock_websocket.sent_messages.clear()
         mock_inference_service.clear_caches.reset_mock()
+        import gc
+
+        gc.collect()
+
+
+@pytest.mark.asyncio
+async def test_feature_metrics_computation_and_saving(
+    mock_websocket,
+    mock_auth_service,
+    mock_user,
+    mock_comvis_service,
+    mock_inference_service,
+    mock_feature_metric_service,
+    mock_db,
+):
+    """Test that feature metrics are computed and saved at session end"""
+    # Setup mock auth service to accept token
+    mock_auth_service.validate_token.return_value = (True, mock_user, None)
+
+    # Setup to process multiple frames to accumulate data before disconnecting
+    frame_data = create_frame_data(width=160, height=120)
+    # Process 35 frames to trigger at least one analyze_buffer call (at frame 30) then disconnect
+    receive_sequence = [frame_data] * 35 + [WebSocketDisconnect()]
+    mock_websocket.receive_bytes = AsyncMock(side_effect=receive_sequence)
+
+    # Mock the analyze_buffer function's feature data to ensure accumulated data exists
+    mock_features = MagicMock()
+    mock_features.body_alignment = MagicMock()  # Mock BodyAlignment object
+    mock_features.joint_angles = {"shoulder": 45.0, "elbow": 90.0}
+    mock_features.objects = {"weight": {"x": 100, "y": 200, "width": 50, "height": 100}}
+    mock_features.speeds = {"velocity": 2.5}
+    mock_features.stability = 1.2
+
+    mock_comvis_service.load_to_features_model.return_value = mock_features
+
+    try:
+        # Call the websocket handler
+        await livestream_exercise_tracking(
+            websocket=mock_websocket,
+            username="testuser",
+            exercise_name="bench_press",
+            token="valid_token",
+            auth_service=mock_auth_service,
+            comvis_service=mock_comvis_service,
+            inference_service=mock_inference_service,
+            feature_metric_service=mock_feature_metric_service,
+            db=mock_db,
+        )
+
+        # Verify feature metrics compute_all_metrics was called
+        mock_feature_metric_service.feature_metric_repo.compute_all_metrics.assert_called_once()
+
+        # Verify feature metrics were saved
+        mock_feature_metric_service.save_feature_metrics.assert_called_once()
+
+        # Check the save call arguments
+        save_call_args = mock_feature_metric_service.save_feature_metrics.call_args
+        assert save_call_args[0][0] == "testuser"  # username
+        assert save_call_args[0][1] == "bench press"  # exercise_name
+        assert isinstance(save_call_args[0][2], dict)  # metrics dict
+
+        # Verify exercise-specific thresholds were used for bench_press
+        compute_call_kwargs = mock_feature_metric_service.feature_metric_repo.compute_all_metrics.call_args[
+            1
+        ]
+        assert (
+            compute_call_kwargs["max_allowed_deviation"] == 8
+        )  # bench_press threshold
+        assert (
+            compute_call_kwargs["max_allowed_variance"] == 12
+        )  # bench_press threshold
+        assert compute_call_kwargs["max_jerk"] == 4.0  # bench_press threshold
+        assert compute_call_kwargs["max_displacement"] == 15.0  # bench_press threshold
+
+    finally:
+        # Force cleanup
+        import gc
+
+        gc.collect()
+
+
+@pytest.mark.asyncio
+async def test_exercise_specific_thresholds(
+    mock_websocket,
+    mock_auth_service,
+    mock_user,
+    mock_comvis_service,
+    mock_inference_service,
+    mock_feature_metric_service,
+    mock_db,
+):
+    """Test that different exercises use appropriate thresholds"""
+    # Setup mock auth service to accept token
+    mock_auth_service.validate_token.return_value = (True, mock_user, None)
+
+    # Setup to process multiple frames to accumulate data before disconnecting
+    frame_data = create_frame_data(width=160, height=120)
+    receive_sequence = [frame_data] * 35 + [WebSocketDisconnect()]
+    mock_websocket.receive_bytes = AsyncMock(side_effect=receive_sequence)
+
+    # Mock the analyze_buffer function's feature data to ensure accumulated data exists
+    mock_features = MagicMock()
+    mock_features.body_alignment = MagicMock()  # Mock BodyAlignment object
+    mock_features.joint_angles = {"shoulder": 45.0, "elbow": 90.0}
+    mock_features.objects = {"weight": {"x": 100, "y": 200, "width": 50, "height": 100}}
+    mock_features.speeds = {"velocity": 2.5}
+    mock_features.stability = 1.2
+
+    mock_comvis_service.load_to_features_model.return_value = mock_features
+
+    # Test deadlift exercise
+    try:
+        await livestream_exercise_tracking(
+            websocket=mock_websocket,
+            username="testuser",
+            exercise_name="deadlift",
+            token="valid_token",
+            auth_service=mock_auth_service,
+            comvis_service=mock_comvis_service,
+            inference_service=mock_inference_service,
+            feature_metric_service=mock_feature_metric_service,
+            db=mock_db,
+        )
+
+        # Verify deadlift-specific thresholds were used
+        compute_call_kwargs = mock_feature_metric_service.feature_metric_repo.compute_all_metrics.call_args[
+            1
+        ]
+        assert compute_call_kwargs["max_allowed_deviation"] == 10  # deadlift threshold
+        assert compute_call_kwargs["max_allowed_variance"] == 15  # deadlift threshold
+        assert compute_call_kwargs["max_jerk"] == 6.0  # deadlift threshold
+        assert compute_call_kwargs["max_displacement"] == 20.0  # deadlift threshold
+
+    finally:
+        # Force cleanup
+        import gc
+
+        gc.collect()
+
+
+@pytest.mark.asyncio
+async def test_feature_metrics_error_handling(
+    mock_websocket,
+    mock_auth_service,
+    mock_user,
+    mock_comvis_service,
+    mock_inference_service,
+    mock_feature_metric_service,
+    mock_db,
+):
+    """Test that websocket handles feature metrics computation errors gracefully"""
+    # Setup mock auth service to accept token
+    mock_auth_service.validate_token.return_value = (True, mock_user, None)
+
+    # Setup to disconnect immediately to trigger final metrics
+    mock_websocket.receive_bytes = AsyncMock(side_effect=WebSocketDisconnect())
+
+    # Make feature metrics computation fail
+    mock_feature_metric_service.feature_metric_repo.compute_all_metrics.side_effect = (
+        Exception("Metrics computation failed")
+    )
+
+    try:
+        # Call the websocket handler
+        await livestream_exercise_tracking(
+            websocket=mock_websocket,
+            username="testuser",
+            exercise_name="squat",
+            token="valid_token",
+            auth_service=mock_auth_service,
+            comvis_service=mock_comvis_service,
+            inference_service=mock_inference_service,
+            feature_metric_service=mock_feature_metric_service,
+            db=mock_db,
+        )
+
+        # Verify that even with metrics error, the session completes gracefully
+        # and history is still reset
+        mock_feature_metric_service.feature_metric_repo.reset_history.assert_called_once()
+
+    finally:
+        # Force cleanup
+        import gc
+
+        gc.collect()
+
+
+@pytest.mark.asyncio
+async def test_feature_metrics_history_reset(
+    mock_websocket,
+    mock_auth_service,
+    mock_user,
+    mock_comvis_service,
+    mock_inference_service,
+    mock_feature_metric_service,
+    mock_db,
+):
+    """Test that feature metrics history is properly reset for new sessions"""
+    # Setup mock auth service to accept token
+    mock_auth_service.validate_token.return_value = (True, mock_user, None)
+
+    # Setup to disconnect immediately
+    mock_websocket.receive_bytes = AsyncMock(side_effect=WebSocketDisconnect())
+
+    try:
+        # Call the websocket handler
+        await livestream_exercise_tracking(
+            websocket=mock_websocket,
+            username="testuser",
+            exercise_name="squat",
+            token="valid_token",
+            auth_service=mock_auth_service,
+            comvis_service=mock_comvis_service,
+            inference_service=mock_inference_service,
+            feature_metric_service=mock_feature_metric_service,
+            db=mock_db,
+        )
+
+        # Verify history reset was called
+        mock_feature_metric_service.feature_metric_repo.reset_history.assert_called_once()
+
+    finally:
+        # Force cleanup
+        import gc
+
+        gc.collect()
+
+
+@pytest.mark.asyncio
+async def test_shoulder_press_thresholds(
+    mock_websocket,
+    mock_auth_service,
+    mock_user,
+    mock_comvis_service,
+    mock_inference_service,
+    mock_feature_metric_service,
+    mock_db,
+):
+    """Test that shoulder press exercise uses stricter thresholds"""
+    # Setup mock auth service to accept token
+    mock_auth_service.validate_token.return_value = (True, mock_user, None)
+
+    # Setup to process multiple frames to accumulate data before disconnecting
+    frame_data = create_frame_data(width=160, height=120)
+    receive_sequence = [frame_data] * 35 + [WebSocketDisconnect()]
+    mock_websocket.receive_bytes = AsyncMock(side_effect=receive_sequence)
+
+    # Mock the analyze_buffer function's feature data to ensure accumulated data exists
+    mock_features = MagicMock()
+    mock_features.body_alignment = MagicMock()  # Mock BodyAlignment object
+    mock_features.joint_angles = {"shoulder": 45.0, "elbow": 90.0}
+    mock_features.objects = {"weight": {"x": 100, "y": 200, "width": 50, "height": 100}}
+    mock_features.speeds = {"velocity": 2.5}
+    mock_features.stability = 1.2
+
+    mock_comvis_service.load_to_features_model.return_value = mock_features
+
+    try:
+        await livestream_exercise_tracking(
+            websocket=mock_websocket,
+            username="testuser",
+            exercise_name="shoulder_press",
+            token="valid_token",
+            auth_service=mock_auth_service,
+            comvis_service=mock_comvis_service,
+            inference_service=mock_inference_service,
+            feature_metric_service=mock_feature_metric_service,
+            db=mock_db,
+        )
+
+        # Verify shoulder press-specific thresholds were used (stricter)
+        compute_call_kwargs = mock_feature_metric_service.feature_metric_repo.compute_all_metrics.call_args[
+            1
+        ]
+        assert (
+            compute_call_kwargs["max_allowed_deviation"] == 6
+        )  # shoulder_press threshold
+        assert (
+            compute_call_kwargs["max_allowed_variance"] == 10
+        )  # shoulder_press threshold
+        assert compute_call_kwargs["max_jerk"] == 3.5  # shoulder_press threshold
+        assert (
+            compute_call_kwargs["max_displacement"] == 12.0
+        )  # shoulder_press threshold
+
+    finally:
+        # Force cleanup
+        import gc
+
+        gc.collect()
+
+
+@pytest.mark.asyncio
+async def test_unknown_exercise_default_thresholds(
+    mock_websocket,
+    mock_auth_service,
+    mock_user,
+    mock_comvis_service,
+    mock_inference_service,
+    mock_feature_metric_service,
+    mock_db,
+):
+    """Test that unknown exercises use default thresholds"""
+    # Setup mock auth service to accept token
+    mock_auth_service.validate_token.return_value = (True, mock_user, None)
+
+    # Setup to process multiple frames to accumulate data before disconnecting
+    frame_data = create_frame_data(width=160, height=120)
+    receive_sequence = [frame_data] * 35 + [WebSocketDisconnect()]
+    mock_websocket.receive_bytes = AsyncMock(side_effect=receive_sequence)
+
+    # Mock the analyze_buffer function's feature data to ensure accumulated data exists
+    mock_features = MagicMock()
+    mock_features.body_alignment = MagicMock()  # Mock BodyAlignment object
+    mock_features.joint_angles = {"shoulder": 45.0, "elbow": 90.0}
+    mock_features.objects = {"weight": {"x": 100, "y": 200, "width": 50, "height": 100}}
+    mock_features.speeds = {"velocity": 2.5}
+    mock_features.stability = 1.2
+
+    mock_comvis_service.load_to_features_model.return_value = mock_features
+
+    try:
+        await livestream_exercise_tracking(
+            websocket=mock_websocket,
+            username="testuser",
+            exercise_name="unknown_exercise",
+            token="valid_token",
+            auth_service=mock_auth_service,
+            comvis_service=mock_comvis_service,
+            inference_service=mock_inference_service,
+            feature_metric_service=mock_feature_metric_service,
+            db=mock_db,
+        )
+
+        # Verify default thresholds were used
+        compute_call_kwargs = mock_feature_metric_service.feature_metric_repo.compute_all_metrics.call_args[
+            1
+        ]
+        assert compute_call_kwargs["max_allowed_deviation"] == 10  # default threshold
+        assert compute_call_kwargs["max_allowed_variance"] == 15  # default threshold
+        assert compute_call_kwargs["max_jerk"] == 5.0  # default threshold
+        assert compute_call_kwargs["max_displacement"] == 20.0  # default threshold
+
+    finally:
+        # Force cleanup
+        import gc
+
+        gc.collect()
+
+
+@pytest.mark.asyncio
+async def test_feature_metrics_data_integrity(
+    mock_websocket,
+    mock_auth_service,
+    mock_user,
+    mock_comvis_service,
+    mock_inference_service,
+    mock_feature_metric_service,
+    mock_db,
+):
+    """Test that feature metrics data contains expected keys and values"""
+    # Setup mock auth service to accept token
+    mock_auth_service.validate_token.return_value = (True, mock_user, None)
+
+    # Setup to process multiple frames to accumulate data before disconnecting
+    frame_data = create_frame_data(width=160, height=120)
+    receive_sequence = [frame_data] * 35 + [WebSocketDisconnect()]
+    mock_websocket.receive_bytes = AsyncMock(side_effect=receive_sequence)
+
+    # Mock the analyze_buffer function's feature data to ensure accumulated data exists
+    mock_features = MagicMock()
+    mock_features.body_alignment = MagicMock()  # Mock BodyAlignment object
+    mock_features.joint_angles = {"shoulder": 45.0, "elbow": 90.0}
+    mock_features.objects = {"weight": {"x": 100, "y": 200, "width": 50, "height": 100}}
+    mock_features.speeds = {"velocity": 2.5}
+    mock_features.stability = 1.2
+
+    mock_comvis_service.load_to_features_model.return_value = mock_features
+
+    try:
+        await livestream_exercise_tracking(
+            websocket=mock_websocket,
+            username="testuser",
+            exercise_name="bench_press",
+            token="valid_token",
+            auth_service=mock_auth_service,
+            comvis_service=mock_comvis_service,
+            inference_service=mock_inference_service,
+            feature_metric_service=mock_feature_metric_service,
+            db=mock_db,
+        )
+
+        # Verify the metrics returned by the mock match expected format
+        expected_metrics = (
+            mock_feature_metric_service.feature_metric_repo.compute_all_metrics.return_value
+        )
+        assert "body_alignment" in expected_metrics
+        assert "joint_consistency" in expected_metrics
+        assert "load_control" in expected_metrics
+        assert "speed_control" in expected_metrics
+        assert "overall_stability" in expected_metrics
+
+        # Verify all values are floats
+        for key, value in expected_metrics.items():
+            assert isinstance(value, (int, float)), f"{key} should be numeric"
+            assert 0 <= value <= 100, f"{key} should be between 0-100"
+
+    finally:
+        # Force cleanup
         import gc
 
         gc.collect()

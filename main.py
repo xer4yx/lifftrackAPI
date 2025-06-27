@@ -1,6 +1,6 @@
 import threading
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Response, Query
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.encoders import jsonable_encoder
@@ -38,6 +38,7 @@ from infrastructure.database import FirebaseREST
 from infrastructure.di import get_firebase_rest
 from interface.routers import user_router as v3_user_router
 from interface.routers import auth_router as v2_auth_router
+from interface.routers import metrics_router as v1_metrics_router
 from interface.ws import websocket_router_v3 as v3_websocket_router
 
 app_settings = AppSettings()
@@ -55,6 +56,7 @@ app.include_router(v2_websocket_router)
 app.include_router(v3_user_router)
 app.include_router(v2_auth_router)
 app.include_router(v3_websocket_router)
+app.include_router(v1_metrics_router)
 
 # Initialize Limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
@@ -90,20 +92,19 @@ async def favicon():
 
 
 # API Endpoint [ROOT]
-@app.get("/")
+@app.get("/", response_class=RedirectResponse)
 @limiter.limit("10/minute")  # Apply specific rate limit
 async def read_root(request: Request, response: Response):
     """Lifttrack API root endpoint."""
     try:
-        return JSONResponse(
-            content={"msg": "Welcome to LiftTrack!"}, status_code=status.HTTP_200_OK
-        )
+        logger.info(f"Redirecting {request.client.host}:{request.client.port}")
+        return RedirectResponse(url="https://lifttrack-tmcg.vercel.app")
     except HTTPException as httpe:
         return JSONResponse(
             content={"msg": httpe.detail}, status_code=httpe.status_code
         )
     except Exception as e:
-        logger.exception(f"Error in read_root: {e}")
+        logger.exception(f"Redirecting failed for {request.client.host}:{request.client.port}: {e}")
         return JSONResponse(
             content={"msg": "Internal server error"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -111,7 +112,7 @@ async def read_root(request: Request, response: Response):
     finally:
         log_network_io(
             logger=network_logger,
-            endpoint=request.url,
+            endpoint=f"{request.client.host}:{request.client.port}",
             method=request.method,
             response_status=response.status_code,
         )

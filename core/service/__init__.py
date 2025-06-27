@@ -6,6 +6,7 @@ from .user_service import (
 )
 from .pose_feature_service import PoseFeatureService
 from .form_analysis_service import FormAnalysisService
+from .feature_metric_service import FeatureMetricService
 
 __all__ = [
     "generate_user_id",
@@ -15,4 +16,5 @@ __all__ = [
     "PoseFeatureService",
     "FormAnalysisService",
     "UserService",
+    "FeatureMetricService",
 ]

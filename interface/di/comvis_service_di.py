@@ -7,15 +7,18 @@ from core.interface import (
     FormAnalysisInterface,
     FrameRepositoryInterface,
     FeatureRepositoryInterface,
+    FeatureMetricRepositoryInterface,
     DataHandlerInterface,
 )
-from core.usecase.comvis_usecase import ComVisUseCase
+from core.usecase.comvis_usecase import ComVisUseCase, FeatureMetricUseCase
 from infrastructure.di import (
     get_form_analysis_repository,
     get_pose_feature_repository,
     get_frame_repository,
     get_feature_repository,
+    get_feature_metric_repository,
     get_data_repository,
+    get_feature_metrics_data_repository,
 )
 
 
@@ -47,4 +50,20 @@ def get_comvis_usecase(
         frame_repository=frame_repository,
         feature_repository=feature_repository,
         data_handler=data_repository,
+    )
+
+
+@lru_cache(maxsize=1)
+def get_feature_metric_usecase(
+    feature_metric_repository: FeatureMetricRepositoryInterface = Depends(
+        get_feature_metric_repository
+    ),
+    data_handler: DataHandlerInterface = Depends(get_feature_metrics_data_repository),
+) -> FeatureMetricUseCase:
+    """
+    Get an instance of FeatureMetricUseCase.
+    """
+    return FeatureMetricUseCase(
+        feature_metric_repository=feature_metric_repository,
+        data_handler=data_handler,
     )
