@@ -4,8 +4,8 @@ from infrastructure.inference.video_action_inference import VideoActionInference
 from infrastructure.inference.factory import InferenceServiceFactory
 
 __all__ = [
-    'RoboflowInferenceService', 
-    'PoseNetInferenceService', 
-    'VideoActionInferenceService',
-    'InferenceServiceFactory'
+    "RoboflowInferenceService",
+    "PoseNetInferenceService",
+    "VideoActionInferenceService",
+    "InferenceServiceFactory",
 ]

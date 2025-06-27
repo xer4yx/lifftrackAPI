@@ -1,21 +1,22 @@
 from .user_entity import UserEntity
 from .pose_entity import (
-    Keypoint, 
+    Keypoint,
     Object,
-    KeypointCollection, 
-    JointAngle, 
-    BodyAlignment, 
-    PoseFeatures, 
+    KeypointCollection,
+    JointAngle,
+    BodyAlignment,
+    PoseFeatures,
     FormAnalysis,
-    ExerciseData
+    ExerciseData,
 )
 from .auth_entity import (
-    TokenEntity, 
-    TokenDataEntity, 
+    TokenEntity,
+    TokenDataEntity,
     TokenBlacklistEntity,
     CredentialsEntity,
-    ValidationResultEntity
+    ValidationResultEntity,
 )
+from .metrics_entity import FeatureMetrics
 
 __all__ = [
     "UserEntity",
@@ -31,6 +32,6 @@ __all__ = [
     "TokenDataEntity",
     "TokenBlacklistEntity",
     "CredentialsEntity",
-    "ValidationResultEntity"
+    "ValidationResultEntity",
+    "FeatureMetrics",
 ]
-

@@ -8,9 +8,9 @@ from .exceptions import (
     UserNotFoundError,
     ValidationError,
     UsernameExistsError,
-    InvalidPasswordError
+    InvalidPasswordError,
 )
-from .token_blacklist_repository import InMemoryTokenBlacklistRepository 
+from .token_blacklist_repository import InMemoryTokenBlacklistRepository
 
 __all__ = [
     "Authenticator",
@@ -23,5 +23,5 @@ __all__ = [
     "ValidationError",
     "UsernameExistsError",
     "InvalidPasswordError",
-    "InMemoryTokenBlacklistRepository"
+    "InMemoryTokenBlacklistRepository",
 ]

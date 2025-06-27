@@ -6,5 +6,5 @@ middleware = CORSMiddleware(
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
-    max_age=600
+    max_age=600,
 )

@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 from core.interface import NTFInterface
 from lifttrack.utils.logging_config import setup_logger
 
+
 def make_awaitable(obj):
     """
     Convert a non-awaitable object into an awaitable using asyncio.Future.
@@ -21,11 +22,18 @@ def make_awaitable(obj):
     future.set_result(obj)
     return future
 
+
 class FirebaseREST(NTFInterface):
     """
     FirebaseREST is a class that provides a REST interface to the Firebase Realtime Database.
     """
-    def __init__(self, dsn: str, authentication: Optional[str] = None, session: Optional[Any] = None) -> None:
+
+    def __init__(
+        self,
+        dsn: str,
+        authentication: Optional[str] = None,
+        session: Optional[Any] = None,
+    ) -> None:
         """
         Initialize the FirebaseREST class.
         Args:
@@ -38,13 +46,13 @@ class FirebaseREST(NTFInterface):
         self.auth = authentication
         self.__lock = asyncio.Lock()
         self.__session = session
-        
+
     async def create_pool(self):
         """Create the connection pool if it doesn't exist"""
         if self.__session is not None:
             self.logger.info("Instance of db pool called but was already created")
             return
-            
+
         async with self.__lock:
             if self.__session is None:
                 conn = aiohttp.TCPConnector(limit=self.__pool_size)
@@ -59,14 +67,13 @@ class FirebaseREST(NTFInterface):
                     await self.__session.aclose()
                     self.__session = None
                     self.logger.info("Closed instance of db pool")
-                    
+
     def __aenter__(self):
         return self.create_pool()
-    
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close_pool()
-        
+
     def sessionmanager(func):
         @wraps(func)
         async def wrapper(self, *args, **kwargs):
@@ -78,56 +85,59 @@ class FirebaseREST(NTFInterface):
             except Exception as e:
                 self.logger.exception(f"Error in sessionmanager: {e}")
                 raise
+
         return wrapper
-    
+
     @sessionmanager
     async def get_data(self, key: str) -> Optional[Dict[str, Any]]:
         try:
             url = f"{self.dsn}/{key}.json"
             if self.auth:
                 url += f"?auth={self.auth}"
-                
+
             response = await self.__session.get(url)
             if response.status_code == status.HTTP_200_OK:
                 # Check if json is a method or property/attribute
                 if callable(response.json):
                     # It's a method (aiohttp style)
                     json_result = response.json()
-                    if hasattr(json_result, '__await__'):
+                    if hasattr(json_result, "__await__"):
                         data = await json_result
                     else:
                         data = json_result
                 else:
                     # It's already a data object (likely a dict)
                     data = response.json
-                
+
                 self.logger.debug(f"Data retrieved for key: {key}")
                 return data if data is not None else {}
             else:
                 # Handle both cases where content could be bytes or a StreamReader
                 content = response.content
-                if hasattr(content, 'read') and callable(content.read):
+                if hasattr(content, "read") and callable(content.read):
                     content = await content.read()
-                self.logger.error(f"Failed to get data for key {key}. Reason: {content}")
+                self.logger.error(
+                    f"Failed to get data for key {key}. Reason: {content}"
+                )
                 return {}
         except Exception as e:
             self.logger.exception(f"Error in get_data for key {key}: {e}")
             return {}
-    
+
     @sessionmanager
     async def set_data(self, key: str, value: Any) -> None:
         try:
             url = f"{self.dsn}/{key}.json"
             if self.auth:
                 url += f"?auth={self.auth}"
-            
+
             response = await self.__session.put(url, json=value)
             if response.status_code == status.HTTP_200_OK:
                 return
             else:
                 # Handle both cases where content could be bytes or a StreamReader
                 content = response.content
-                if hasattr(content, 'read') and callable(content.read):
+                if hasattr(content, "read") and callable(content.read):
                     content = await content.read()
                 raise Exception(f"Error setting data: {content}")
         except Exception as e:
@@ -136,21 +146,21 @@ class FirebaseREST(NTFInterface):
             # Connection errors and other external exceptions are just logged
             if "Error setting data:" in str(e):
                 raise
-    
+
     @sessionmanager
     async def delete_data(self, key: str) -> None:
         try:
             url = f"{self.dsn}/{key}.json"
             if self.auth:
                 url += f"?auth={self.auth}"
-            
+
             response = await self.__session.delete(url)
             if response.status_code == status.HTTP_200_OK:
                 return True
             else:
                 # Handle both cases where content could be bytes or a StreamReader
                 content = response.content
-                if hasattr(content, 'read') and callable(content.read):
+                if hasattr(content, "read") and callable(content.read):
                     content = await content.read()
                 raise Exception(f"Error deleting data: {content}")
         except Exception as e:
@@ -165,40 +175,46 @@ class FirebaseAdmin(NTFInterface):
     _logger = setup_logger("infrastructure.firebase.admin", "db.log")
     _instance = None
     _lock = threading.Lock()
-    
+
     def __new__(
-        cls, 
-        credentials_path: Optional[str] = None, 
-        options: Optional[Dict[str, Any]] = None):
+        cls,
+        credentials_path: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ):
         if not cls._instance:
             with cls._lock:
                 try:
-                    credential = credentials.Certificate(credentials_path) if credentials_path else None
+                    credential = (
+                        credentials.Certificate(credentials_path)
+                        if credentials_path
+                        else None
+                    )
                     if not firebase_admin._apps:
-                        if not options or 'databaseURL' not in options:
+                        if not options or "databaseURL" not in options:
                             raise ValueError("Database URL not provided")
                         firebase_admin.initialize_app(
-                            credential=credential, 
-                            options=options)
-                    
+                            credential=credential, options=options
+                        )
+
                     cls._instance = super().__new__(cls)
                 except Exception as e:
                     cls._logger.error(f"Error initializing Firebase Admin: {e}")
                     raise e
         return cls._instance
-    
+
     def __init__(
-        self, 
-        credentials_path: Optional[str] = None, 
-        options: Optional[Dict[str, Any]] = None):
+        self,
+        credentials_path: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ):
         # Only initialize once
-        if not hasattr(self, '_initialized'):
+        if not hasattr(self, "_initialized"):
             self._executor = ThreadPoolExecutor(
-                max_workers=10,
-                thread_name_prefix='firebase-admin-executor')
+                max_workers=10, thread_name_prefix="firebase-admin-executor"
+            )
             self._db = db.reference()
             self._initialized = True
-    
+
     async def get_data(self, key: str) -> Optional[Dict[str, Any]]:
         try:
             snapshot = self._db.child(key).get()
@@ -209,12 +225,14 @@ class FirebaseAdmin(NTFInterface):
         except Exception as e:
             self._logger.exception(f"Error in get_data for key {key}: {e}")
             raise
-        
-    async def set_data(self, key: Optional[str] = None, value: Dict[str, Any] = None) -> None:
+
+    async def set_data(
+        self, key: Optional[str] = None, value: Dict[str, Any] = None
+    ) -> None:
         try:
             if not key or not value:
                 raise ValueError("Key and value not provided in the parameter")
-            
+
             self._db.child(key).set(value=value)
         except FirebaseError as fe:
             self._logger.exception(f"Error in set_data: {fe}")
@@ -222,7 +240,7 @@ class FirebaseAdmin(NTFInterface):
         except Exception as e:
             self._logger.exception(f"Error in set_data: {e}")
             raise
-        
+
     async def delete_data(self, key: str) -> None:
         try:
             self._db.child(key).delete()

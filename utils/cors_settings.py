@@ -4,11 +4,19 @@ from typing import List
 
 
 class CorsSettings(BaseSettings):
-    allowed_origins: List[str] = Field(default=["*"], description="List of allowed origins")
-    allowed_methods: List[str] = Field(default=["*"], description="List of allowed methods")
-    allowed_headers: List[str] = Field(default=["*"], description="List of allowed headers")
+    allowed_origins: List[str] = Field(
+        default=["*"], description="List of allowed origins"
+    )
+    allowed_methods: List[str] = Field(
+        default=["*"], description="List of allowed methods"
+    )
+    allowed_headers: List[str] = Field(
+        default=["*"], description="List of allowed headers"
+    )
     allow_credentials: bool = Field(default=True, description="Allow credentials")
-    expose_headers: List[str] = Field(default=["*"], description="List of exposed headers")
+    expose_headers: List[str] = Field(
+        default=["*"], description="List of exposed headers"
+    )
 
     class Config:
         env_prefix = "CORS_"

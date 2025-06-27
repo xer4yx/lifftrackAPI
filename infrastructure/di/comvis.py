@@ -1,13 +1,21 @@
 from fastapi import Depends
 from functools import lru_cache
 
-from core.interface import PoseFeatureInterface, FormAnalysisInterface, NTFInterface
+from core.interface import (
+    PoseFeatureInterface,
+    FormAnalysisInterface,
+    NTFInterface,
+    FeatureMetricRepositoryInterface,
+)
 from infrastructure.comvis import (
-    PoseFeatureRepository, 
-    FormAnalysisRepository, 
-    FrameRepository, 
-    WeightliftDataRepository, 
-    FeatureRepository)
+    PoseFeatureRepository,
+    FormAnalysisRepository,
+    FrameRepository,
+    WeightliftDataRepository,
+    FeatureRepository,
+    FeatureMetricRepository,
+    FeatureMetricsDataRepository,
+)
 from infrastructure.di import get_firebase_admin
 
 
@@ -15,7 +23,7 @@ from infrastructure.di import get_firebase_admin
 def get_pose_feature_repository() -> PoseFeatureInterface:
     """
     Get an instance of PoseFeatureRepository.
-    
+
     Returns:
         PoseFeatureInterface implementation
     """
@@ -26,7 +34,7 @@ def get_pose_feature_repository() -> PoseFeatureInterface:
 def get_form_analysis_repository() -> FormAnalysisInterface:
     """
     Get an instance of FormAnalysisRepository.
-    
+
     Returns:
         FormAnalysisInterface implementation
     """
@@ -42,11 +50,23 @@ def get_frame_repository() -> FrameRepository:
 
 
 @lru_cache(maxsize=1)
-def get_data_repository(database_repository: NTFInterface = Depends(get_firebase_admin)) -> WeightliftDataRepository:
+def get_data_repository(
+    database_repository: NTFInterface = Depends(get_firebase_admin),
+) -> WeightliftDataRepository:
     """
     Get an instance of DataRepository.
     """
     return WeightliftDataRepository(database_repository=database_repository)
+
+
+@lru_cache(maxsize=1)
+def get_feature_metrics_data_repository(
+    database_repository: NTFInterface = Depends(get_firebase_admin),
+) -> FeatureMetricsDataRepository:
+    """
+    Get an instance of FeatureMetricsDataRepository.
+    """
+    return FeatureMetricsDataRepository(database_repository=database_repository)
 
 
 @lru_cache(maxsize=1)
@@ -55,3 +75,14 @@ def get_feature_repository() -> FeatureRepository:
     Get an instance of FeatureRepository.
     """
     return FeatureRepository()
+
+
+@lru_cache(maxsize=1)
+def get_feature_metric_repository() -> FeatureMetricRepositoryInterface:
+    """
+    Get an instance of FeatureMetricRepository.
+
+    Returns:
+        FeatureMetricRepositoryInterface implementation
+    """
+    return FeatureMetricRepository()
