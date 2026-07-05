@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lift-track.com/contract/v1/coaching.schema.json",
+  "title": "Coaching message (server -> client)",
+  "description": "~1/sec form score and suggestions, consumed by on-screen text and TTS. Shares the scoring pass that persists to Firebase (ADR 0011).",
+  "type": "object",
+  "required": ["type", "accuracy", "suggestions"],
+  "additionalProperties": false,
+  "properties": {
+    "type": { "const": "coaching" },
+    "accuracy": { "type": "number", "minimum": 0, "maximum": 1 },
+    "suggestions": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

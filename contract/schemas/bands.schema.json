@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lift-track.com/contract/v1/bands.schema.json",
+  "title": "Bands message (server -> client)",
+  "description": "Per-joint form-deviation colors, keyed by vertex keypoint. Colors only, no positions; the client paints them onto its own keypoints (ADR 0011, 0004).",
+  "type": "object",
+  "required": ["type", "t", "bands"],
+  "additionalProperties": false,
+  "properties": {
+    "type": { "const": "bands" },
+    "t": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Echoed client timestamp of the keypoints frame this bands message scores."
+    },
+    "bands": {
+      "type": "object",
+      "description": "Vertex keypoint -> band color. Only scored joints appear.",
+      "additionalProperties": false,
+      "properties": {
+        "nose": { "$ref": "#/$defs/band" },
+        "left_eye": { "$ref": "#/$defs/band" },
+        "right_eye": { "$ref": "#/$defs/band" },
+        "left_ear": { "$ref": "#/$defs/band" },
+        "right_ear": { "$ref": "#/$defs/band" },
+        "left_shoulder": { "$ref": "#/$defs/band" },
+        "right_shoulder": { "$ref": "#/$defs/band" },
+        "left_elbow": { "$ref": "#/$defs/band" },
+        "right_elbow": { "$ref": "#/$defs/band" },
+        "left_wrist": { "$ref": "#/$defs/band" },
+        "right_wrist": { "$ref": "#/$defs/band" },
+        "left_hip": { "$ref": "#/$defs/band" },
+        "right_hip": { "$ref": "#/$defs/band" },
+        "left_knee": { "$ref": "#/$defs/band" },
+        "right_knee": { "$ref": "#/$defs/band" },
+        "left_ankle": { "$ref": "#/$defs/band" },
+        "right_ankle": { "$ref": "#/$defs/band" }
+      }
+    }
+  },
+  "$defs": {
+    "band": { "enum": ["green", "orange", "red"] }
+  }
+}
