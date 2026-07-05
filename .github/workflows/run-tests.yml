@@ -23,7 +23,24 @@ jobs:
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install pytest pytest-cov
-    
+
+    - name: Create throwaway test config
+      # config.ini and .env are git-ignored (local-only). The app reads a couple
+      # of sections at import time, so provide dummy values so modules import in
+      # CI. These are not real credentials. Superseded by ADR 0010 (pydantic
+      # settings + env layering).
+      run: |
+        cat > config.ini <<'INI'
+        [Firebase]
+        FIREBASE_DEV_DB = https://lifttrack-test.firebaseio.com
+        FIREBASE_AUTH_UID = ci-test-uid
+
+        [Authentication]
+        SECRET_KEY = ci-test-secret-not-real
+        ALGORITHM = HS256
+        TTL = 30
+        INI
+
     - name: Test with pytest
       run: |
         pytest --cov=./ --cov-report=xml

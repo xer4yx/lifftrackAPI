@@ -31,7 +31,22 @@ jobs:
       run: |
         find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" | xargs pylint --disable=C0114,C0115,C0116
       continue-on-error: true
-    
+
+    - name: Create throwaway test config
+      # See run-tests.yml: config.ini is git-ignored, dummy values let modules
+      # import in CI. Not real credentials; superseded by ADR 0010.
+      run: |
+        cat > config.ini <<'INI'
+        [Firebase]
+        FIREBASE_DEV_DB = https://lifttrack-test.firebaseio.com
+        FIREBASE_AUTH_UID = ci-test-uid
+
+        [Authentication]
+        SECRET_KEY = ci-test-secret-not-real
+        ALGORITHM = HS256
+        TTL = 30
+        INI
+
     - name: Run tests
       run: |
         pytest 
