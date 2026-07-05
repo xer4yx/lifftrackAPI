@@ -20,59 +20,16 @@ class FeatureRepository(FeatureRepositoryInterface):
     def perform_frame_analysis(
         self, frames_buffer: List[np.ndarray], request: Request
     ) -> Tuple[Dict, Dict, List, str]:
+        """Removed: the server no longer runs pose on pixel frames.
+
+        The keypoints-in cutover (ADR 0001/0002/0009) moved pose estimation
+        on-device; the live path now scores client-supplied keypoints via
+        ComVisUseCase.process_keypoints. This frames-in method is retained only
+        to satisfy the interface and is no longer reachable.
         """
-        Perform pose-only frame analysis on the input frames.
-
-        Object detection and action recognition were dropped from the live path
-        (ADR 0002), so only pose estimation runs here. Detected objects come back
-        empty and the exercise class name is no longer inferred server-side (the
-        client supplies it as a websocket query param).
-
-        Args:
-            frames_buffer: List of frame buffers
-
-        Returns:
-            Tuple of (current_pose, previous_pose, detected_object, class_name)
-
-        Raises:
-            Exception: If frame analysis fails
-        """
-        try:
-            if len(frames_buffer) < 2:
-                return None, None, None, None
-
-            start_time = time.time()
-
-            if not hasattr(request.app.state, "inference_services"):
-                raise ValueError("Inference services not found in request")
-
-            services = request.app.state.inference_services
-            posenet_service = services.get("posenet")
-
-            # Run pose estimation on the last two frames in parallel
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                current_pose_future = executor.submit(
-                    posenet_service.infer, frames_buffer[-1]
-                )
-                previous_pose_future = executor.submit(
-                    posenet_service.infer, frames_buffer[-2]
-                )
-
-                _, current_pose = current_pose_future.result()
-                _, previous_pose = previous_pose_future.result()
-
-            # Log processing time
-            processing_time = time.time() - start_time
-            fps = 1.0 / processing_time if processing_time > 0 else 0
-            logger.debug(
-                f"Frame processing time: {processing_time:.3f}s ({fps:.1f} FPS)"
-            )
-
-            return current_pose, previous_pose, [], None
-
-        except Exception as e:
-            logger.error(f"Failed to perform frame analysis: {str(e)}")
-            raise
+        raise NotImplementedError(
+            "Server-side frame analysis was removed; the client streams keypoints."
+        )
 
     def load_to_object_model(self, object_inference: List[Dict]) -> Object:
         """
