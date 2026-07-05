@@ -31,3 +31,9 @@ EXERCISE_THRESHOLDS = {
         "max_displacement": 20.0,
     },
 }
+
+# Name aliases so every exercise variant the form-analysis pipeline recognizes
+# resolves to real thresholds instead of silently falling back to "default".
+EXERCISE_THRESHOLDS["benchpress"] = EXERCISE_THRESHOLDS["bench_press"]
+EXERCISE_THRESHOLDS["romanian_deadlift"] = EXERCISE_THRESHOLDS["rdl"]
+EXERCISE_THRESHOLDS["overhead_press"] = EXERCISE_THRESHOLDS["shoulder_press"]
