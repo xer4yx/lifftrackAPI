@@ -64,3 +64,8 @@ across devices, camera distances, and resolutions.
   live path** — that is the specific cost ADR 0002 exists to avoid.
 - Any reintroduced metric must ship with a test proving it produces non-trivial
   scores on real motion, so we do not repeat the silently-broken `load_control`.
+  Concretely, per the test strategy (ADR
+  [0013](docs/adr/0013-test-strategy.md)), that means a discrimination assertion
+  (good rep scores above bad rep) plus an anti-degeneracy assertion (the score
+  is never a constant 0 or 100 across a varied sequence) — a coverage-% gate is
+  explicitly not sufficient.
