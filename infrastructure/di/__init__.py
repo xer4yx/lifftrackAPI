@@ -1,9 +1,5 @@
 from .db import get_firebase_rest, get_firebase_admin
-from .inference import (
-    get_posenet_service,
-    get_roboflow_service,
-    get_video_action_service,
-)
+from .inference import get_posenet_service
 from .comvis import (
     get_pose_feature_repository,
     get_form_analysis_repository,
@@ -26,8 +22,6 @@ __all__ = [
     "get_firebase_rest",
     "get_firebase_admin",
     "get_posenet_service",
-    "get_roboflow_service",
-    "get_video_action_service",
     "get_pose_feature_repository",
     "get_form_analysis_repository",
     "get_frame_repository",

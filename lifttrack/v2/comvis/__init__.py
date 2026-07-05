@@ -1,9 +1,3 @@
-from .Movenet import MovenetInference
-from .object_track import ObjectTracker
-from .Live import ThreeDimInference
-
-__all__ = [
-    "MovenetInference", 
-    "ObjectTracker", 
-    "ThreeDimInference"
-]
+# The legacy pose/object/action pipeline was removed in the v3.0.0 teardown
+# (ADR 0002, 0009). Only image-resize helpers in utils.py survive, used by the
+# canonical PoseNet inference service.

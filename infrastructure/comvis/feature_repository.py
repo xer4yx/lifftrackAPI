@@ -8,16 +8,6 @@ from core.entities import Object, PoseFeatures, KeypointCollection
 from core.interface import FeatureRepositoryInterface
 from lifttrack.utils.logging_config import setup_logger
 
-# Import features functions by name to avoid circular imports
-from lifttrack.v2.comvis.features import (
-    extract_joint_angles,
-    extract_movement_patterns,
-    calculate_speed,
-    extract_body_alignment,
-    calculate_stability,
-)
-from lifttrack.v2.comvis.progress import calculate_form_accuracy
-
 logger = setup_logger("feature-repository", "feature_repository.log")
 
 
@@ -31,7 +21,12 @@ class FeatureRepository(FeatureRepositoryInterface):
         self, frames_buffer: List[np.ndarray], request: Request
     ) -> Tuple[Dict, Dict, List, str]:
         """
-        Perform parallel frame analysis on the input frames.
+        Perform pose-only frame analysis on the input frames.
+
+        Object detection and action recognition were dropped from the live path
+        (ADR 0002), so only pose estimation runs here. Detected objects come back
+        empty and the exercise class name is no longer inferred server-side (the
+        client supplies it as a websocket query param).
 
         Args:
             frames_buffer: List of frame buffers
@@ -52,30 +47,18 @@ class FeatureRepository(FeatureRepositoryInterface):
                 raise ValueError("Inference services not found in request")
 
             services = request.app.state.inference_services
-            videoaction_service = services.get("videoaction")
             posenet_service = services.get("posenet")
-            roboflow_service = services.get("roboflow")
 
-            # Run models in parallel using ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                # Submit all tasks to the executor using the appropriate service methods
-                class_name_future = executor.submit(
-                    videoaction_service.predict_class, frames_buffer
-                )
+            # Run pose estimation on the last two frames in parallel
+            with ThreadPoolExecutor(max_workers=2) as executor:
                 current_pose_future = executor.submit(
                     posenet_service.infer, frames_buffer[-1]
-                )
-                detected_object_future = executor.submit(
-                    roboflow_service.infer, frames_buffer[-1]
                 )
                 previous_pose_future = executor.submit(
                     posenet_service.infer, frames_buffer[-2]
                 )
 
-                # Get results from futures
-                class_name = class_name_future.result()
                 _, current_pose = current_pose_future.result()
-                detected_object = detected_object_future.result()
                 _, previous_pose = previous_pose_future.result()
 
             # Log processing time
@@ -85,7 +68,7 @@ class FeatureRepository(FeatureRepositoryInterface):
                 f"Frame processing time: {processing_time:.3f}s ({fps:.1f} FPS)"
             )
 
-            return current_pose, previous_pose, detected_object, class_name
+            return current_pose, previous_pose, [], None
 
         except Exception as e:
             logger.error(f"Failed to perform frame analysis: {str(e)}")
@@ -256,24 +239,21 @@ class FeatureRepository(FeatureRepositoryInterface):
             Tuple of (accuracy, suggestions)
         """
         try:
-            _features = features.model_dump()
-            if not isinstance(_features, dict):
-                logger.error("features must be a dictionary")
-                raise TypeError("features must be a dictionary")
+            # Use the canonical clean-architecture form analysis service (replaces the
+            # legacy lifttrack.v2.comvis.progress.calculate_form_accuracy). It reads the
+            # PoseFeatures object directly and normalizes the exercise name internally.
+            from core.service.form_analysis_service import FormAnalysisService
 
-            # Normalize the class_name to match the format expected by calculate_form_accuracy
-            normalized_class_name = class_name.lower().replace(" ", "_")
-
-            accuracy, suggestions = calculate_form_accuracy(
-                _features, normalized_class_name
+            analysis = FormAnalysisService().analyze_form(features, class_name)
+            logger.info(
+                f"Form accuracy: {analysis.accuracy}, Suggestions: {analysis.suggestions}"
             )
-            logger.info(f"Form accuracy: {accuracy}, Suggestions: {suggestions}")
             # Join suggestions list into a single string, or return a default message if empty
             return (
-                accuracy,
+                analysis.accuracy,
                 (
-                    " ".join(suggestions)
-                    if suggestions
+                    " ".join(analysis.suggestions)
+                    if analysis.suggestions
                     else "Form looks good! Keep it up!"
                 ),
             )

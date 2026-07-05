@@ -117,8 +117,11 @@ async def livestream_exercise_tracking(
         loop = asyncio.get_running_loop()
 
         try:
-            # Use sequential processing similar to the working WebsocketRouter.py
-            # This prevents thread pool saturation by avoiding concurrent inference
+            # Use sequential processing to prevent thread pool saturation by avoiding
+            # concurrent inference. Only pose estimation runs server-side now: object
+            # detection and action recognition were dropped (ADR 0002), and the
+            # exercise name arrives as a required query param instead of being
+            # predicted by the action classifier.
             def sequential_analysis():
                 """Sequential frame analysis to prevent thread saturation"""
                 if len(frames_buffer) < 2:
@@ -130,7 +133,6 @@ async def livestream_exercise_tracking(
                     frames_buffer[-2] if len(frames_buffer) > 1 else frames_buffer[-1]
                 )
 
-                # Process frames sequentially instead of concurrently
                 # Get pose keypoints for current and previous frames
                 current_pose_result = inference_service._pose_estimation.infer(
                     current_frame
@@ -139,25 +141,13 @@ async def livestream_exercise_tracking(
                     previous_frame
                 )
 
-                # Get object detections from current frame
-                objects_result = inference_service._object_detection.infer(
-                    current_frame
-                )
-
-                # Get action recognition from the full buffer
-                action_result = inference_service._action_recognition.infer(
-                    frames_buffer
-                )
-
-                # Extract data
+                # Extract data. Objects are empty (no server object detection) and the
+                # exercise name is taken from the client-supplied query param.
                 current_pose = current_pose_result.get("keypoints", {})
                 previous_pose = previous_pose_result.get("keypoints", {})
-                objects = objects_result.get("predictions", [])
-                predicted_class_name = action_result.get(
-                    "predicted_class_name", exercise_name
-                )
+                objects = []
 
-                return current_pose, previous_pose, objects, predicted_class_name
+                return current_pose, previous_pose, objects, exercise_name
 
             # Run the sequential analysis in the shared thread pool
             current_pose, previous_pose, objects, predicted_class_name = (

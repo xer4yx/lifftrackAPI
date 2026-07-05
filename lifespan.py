@@ -58,30 +58,14 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("Initializing inference services...")
 
-        # Initialize PoseNet service
+        # Initialize PoseNet service (the only server-side ML model on the v3 path;
+        # object detection and action recognition were dropped per ADR 0002)
         inference_services["posenet"] = (
             InferenceServiceFactory.create_inference_service(
                 service_type="posenet", config={"enable_gpu": False, "max_workers": 1}
             )
         )
         logger.info("PoseNet inference service initialized")
-
-        # Initialize Roboflow service
-        inference_services["roboflow"] = (
-            InferenceServiceFactory.create_inference_service(
-                service_type="roboflow", config={"max_workers": 1}
-            )
-        )
-        logger.info("Roboflow inference service initialized")
-
-        # Initialize VideoAction service
-        inference_services["videoaction"] = (
-            InferenceServiceFactory.create_inference_service(
-                service_type="videoaction",
-                config={"enable_gpu": False, "max_workers": 1, "num_frames": 30},
-            )
-        )
-        logger.info("VideoAction inference service initialized")
 
         # Make services available through the app state
         app.state.inference_services = inference_services
