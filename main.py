@@ -26,10 +26,7 @@ from lifttrack.auth import (
 from routers.manager import HTTPConnectionPool
 from routers.UsersRouter import router as users_router
 from routers.ProgressRouter import router as progress_router
-from routers.WebsocketRouter import router as websocket_router
-from routers.InferenceRouter import router as inference_router
 from routers.v2.UsersRouter import router as v2_users_router
-from routers.v2.WebsocketRouter import router as v2_websocket_router
 
 from utils import AppSettings
 from utils.cors_settings import CorsSettings
@@ -49,10 +46,7 @@ app = FastAPI(title=app_settings.name, version=app_settings.version, lifespan=li
 # v1 API Routers
 app.include_router(users_router)
 app.include_router(progress_router)
-app.include_router(websocket_router)
-app.include_router(inference_router)
 app.include_router(v2_users_router)
-app.include_router(v2_websocket_router)
 app.include_router(v3_user_router)
 app.include_router(v2_auth_router)
 app.include_router(v3_websocket_router)

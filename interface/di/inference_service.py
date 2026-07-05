@@ -17,12 +17,15 @@ async def get_inference_usecase(websocket: WebSocket) -> InferenceUseCase:
     # Get the inference services from app state
     inference_services = websocket.app.state.inference_services
 
-    # Create and return the InferenceUseCase with reduced workers for 4-core CPU
-    # Use only 1 worker to prevent thread saturation since we're doing sequential processing
+    # Create and return the InferenceUseCase with reduced workers for 4-core CPU.
+    # Use only 1 worker to prevent thread saturation since we're doing sequential
+    # processing. Object detection and action recognition were dropped per ADR 0002,
+    # so only pose estimation is wired up; the v3 path uses the client-supplied
+    # exercise_name instead of the action classifier.
     inference_usecase = InferenceUseCase(
-        object_detection_service=inference_services.get("roboflow"),
+        object_detection_service=None,
         pose_estimation_service=inference_services.get("posenet"),
-        action_recognition_service=inference_services.get("videoaction"),
+        action_recognition_service=None,
         max_workers=1,  # Reduce from default 4 to prevent thread saturation
     )
 
