@@ -43,7 +43,7 @@ async def get_metrics(
         if username != current_user.username:
             logger.error(f"User {username} is not authorized to access metrics for {current_user.username}")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not authorized to access this resource")
-        key = f"metrics/{username}/{exercise.replace("_", " ")}"
+        key = f"metrics/{username}/{exercise.replace('_', ' ')}"
         metrics = await db.get_data(key)
         if metrics is None:
             logger.error(f"Metrics not found for {username}/{exercise}")
