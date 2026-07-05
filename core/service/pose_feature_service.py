@@ -95,10 +95,13 @@ class PoseFeatureService(PoseFeatureInterface):
                 and joint2 in filtered_keypoints
                 and joint3 in filtered_keypoints
             ):
+                # Pass only the (x, y) coordinates: the third element is the
+                # keypoint confidence and must not be treated as a z-coordinate
+                # in the 2D angle computation.
                 angle = self.calculate_angle(
-                    filtered_keypoints[joint1],
-                    filtered_keypoints[joint2],
-                    filtered_keypoints[joint3],
+                    filtered_keypoints[joint1][:2],
+                    filtered_keypoints[joint2][:2],
+                    filtered_keypoints[joint3][:2],
                 )
                 angles[f"{joint1}_{joint2}_{joint3}"] = angle
 
@@ -160,8 +163,11 @@ class PoseFeatureService(PoseFeatureInterface):
             shoulder_midpoint = (ls_pos + rs_pos) / 2
             hip_midpoint = (lh_pos + rh_pos) / 2
 
-            # Calculate vertical alignment (angle with vertical axis)
-            vertical_vector = np.array([0, 1])  # Vertical reference vector
+            # Calculate vertical alignment (angle with vertical axis). In image
+            # space y grows downward, so an upright torso's shoulder->hip vector
+            # points toward -y; the reference must too, otherwise an upright torso
+            # reads ~180 deg instead of ~0.
+            vertical_vector = np.array([0, -1])  # Upward reference in image space
             body_vector = shoulder_midpoint - hip_midpoint
 
             # Normalize vectors
@@ -169,10 +175,13 @@ class PoseFeatureService(PoseFeatureInterface):
             if np.linalg.norm(body_vector) > 0:
                 body_vector = body_vector / np.linalg.norm(body_vector)
 
-                # Calculate angle between body vector and vertical
+                # Calculate angle between body vector and vertical. Commit this
+                # immediately so a degenerate lateral computation below cannot
+                # discard a valid vertical alignment.
                 cos_angle = np.dot(body_vector, vertical_vector)
                 cos_angle = np.clip(cos_angle, -1.0, 1.0)
                 vertical_alignment = np.arccos(cos_angle) * (180.0 / np.pi)
+                alignment[0] = vertical_alignment
 
                 # Calculate lateral tilt (left-right balance)
                 shoulder_vector = rs_pos - ls_pos
@@ -189,7 +198,7 @@ class PoseFeatureService(PoseFeatureInterface):
                     cos_lateral = np.clip(cos_lateral, -1.0, 1.0)
                     lateral_alignment = np.arccos(cos_lateral) * (180.0 / np.pi)
 
-                    alignment = [vertical_alignment, lateral_alignment]
+                    alignment[1] = lateral_alignment
 
         return tuple(alignment)
 
@@ -256,22 +265,23 @@ class PoseFeatureService(PoseFeatureInterface):
         angles = features.joint_angles
 
         if exercise_type == "bench_press" or exercise_type == "benchpress":
-            # Check for wrist alignment
-            left_wrist_angle = abs(
-                90 - angles.get("left_shoulder_left_elbow_left_wrist", 90)
-            )
-            right_wrist_angle = abs(
-                90 - angles.get("right_shoulder_right_elbow_right_wrist", 90)
-            )
+            # Only evaluate a check when the angle is actually present. A missing
+            # angle (occluded keypoint) must not fall back to a default that reads
+            # as bad form and produces a false positive.
+            left_elbow = angles.get("left_shoulder_left_elbow_left_wrist")
+            right_elbow = angles.get("right_shoulder_right_elbow_right_wrist")
 
-            if left_wrist_angle > 20 or right_wrist_angle > 20:
+            # Check for wrist alignment (deviation of the elbow angle from 90)
+            wrist_devs = [
+                abs(90 - a) for a in (left_elbow, right_elbow) if a is not None
+            ]
+            if any(dev > 20 for dev in wrist_devs):
                 issues["wrist_alignment"] = True
 
-            # Check for elbow position
-            left_elbow = angles.get("left_shoulder_left_elbow_left_wrist", 180)
-            right_elbow = angles.get("right_shoulder_right_elbow_right_wrist", 180)
-
-            if left_elbow > 110 or right_elbow > 110:
+            # Check for elbow position (over-extension past 110)
+            if (left_elbow is not None and left_elbow > 110) or (
+                right_elbow is not None and right_elbow > 110
+            ):
                 issues["elbow_position"] = True
 
         elif (
@@ -495,7 +505,9 @@ class PoseFeatureService(PoseFeatureInterface):
 
         # Extract body alignment
         vertical_alignment, lateral_alignment = self.extract_body_alignment(keypoints)
-        body_alignment = BodyAlignment(vertical_alignment, lateral_alignment)
+        body_alignment = BodyAlignment(
+            vertical_alignment=vertical_alignment, lateral_alignment=lateral_alignment
+        )
 
         # Create PoseFeatures object
         features = PoseFeatures(
@@ -504,7 +516,7 @@ class PoseFeatureService(PoseFeatureInterface):
             movement_patterns=movement_patterns,
             body_alignment=body_alignment,
             stability=stability,
-            speed=speed,
+            speeds=speed,
             objects=objects or {},
         )
 
