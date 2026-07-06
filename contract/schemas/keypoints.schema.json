@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lift-track.com/contract/v1/keypoints.schema.json",
+  "title": "Keypoints message (client -> server)",
+  "description": "17 COCO keypoints in normalized [0,1] image coordinates with confidence, produced on-device (ADR 0001, 0003).",
+  "type": "object",
+  "required": ["type", "t", "keypoints"],
+  "additionalProperties": false,
+  "properties": {
+    "type": { "const": "keypoints" },
+    "t": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Client-side capture timestamp in ms; echoed back on bands."
+    },
+    "keypoints": {
+      "type": "object",
+      "description": "Subset of the 17 COCO keypoints the client detected.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "nose": { "$ref": "#/$defs/point" },
+        "left_eye": { "$ref": "#/$defs/point" },
+        "right_eye": { "$ref": "#/$defs/point" },
+        "left_ear": { "$ref": "#/$defs/point" },
+        "right_ear": { "$ref": "#/$defs/point" },
+        "left_shoulder": { "$ref": "#/$defs/point" },
+        "right_shoulder": { "$ref": "#/$defs/point" },
+        "left_elbow": { "$ref": "#/$defs/point" },
+        "right_elbow": { "$ref": "#/$defs/point" },
+        "left_wrist": { "$ref": "#/$defs/point" },
+        "right_wrist": { "$ref": "#/$defs/point" },
+        "left_hip": { "$ref": "#/$defs/point" },
+        "right_hip": { "$ref": "#/$defs/point" },
+        "left_knee": { "$ref": "#/$defs/point" },
+        "right_knee": { "$ref": "#/$defs/point" },
+        "left_ankle": { "$ref": "#/$defs/point" },
+        "right_ankle": { "$ref": "#/$defs/point" }
+      }
+    }
+  },
+  "$defs": {
+    "point": {
+      "type": "object",
+      "required": ["x", "y", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

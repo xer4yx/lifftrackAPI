@@ -24,6 +24,9 @@ requirements.txt
 
 !logo.jpg
 
+# The versioned wire contract must be tracked despite the blanket *.json ignore.
+!contract/**/*.json
+
 *.http
 
 *tests/public/

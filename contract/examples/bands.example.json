@@ -1,0 +1,8 @@
+{
+  "type": "bands",
+  "t": 1719900000123,
+  "bands": {
+    "left_elbow": "green",
+    "right_elbow": "orange"
+  }
+}

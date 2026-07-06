@@ -1,0 +1,19 @@
+{
+  "type": "keypoints",
+  "t": 1719900000123,
+  "keypoints": {
+    "nose": { "x": 0.5, "y": 0.18, "confidence": 0.98 },
+    "left_shoulder": { "x": 0.42, "y": 0.32, "confidence": 0.95 },
+    "right_shoulder": { "x": 0.58, "y": 0.32, "confidence": 0.95 },
+    "left_elbow": { "x": 0.38, "y": 0.46, "confidence": 0.9 },
+    "right_elbow": { "x": 0.62, "y": 0.46, "confidence": 0.9 },
+    "left_wrist": { "x": 0.36, "y": 0.6, "confidence": 0.86 },
+    "right_wrist": { "x": 0.64, "y": 0.6, "confidence": 0.86 },
+    "left_hip": { "x": 0.45, "y": 0.62, "confidence": 0.92 },
+    "right_hip": { "x": 0.55, "y": 0.62, "confidence": 0.92 },
+    "left_knee": { "x": 0.44, "y": 0.8, "confidence": 0.88 },
+    "right_knee": { "x": 0.56, "y": 0.8, "confidence": 0.88 },
+    "left_ankle": { "x": 0.44, "y": 0.96, "confidence": 0.8 },
+    "right_ankle": { "x": 0.56, "y": 0.96, "confidence": 0.8 }
+  }
+}

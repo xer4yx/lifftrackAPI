@@ -9,6 +9,7 @@ python-multipart>=0.0.9
 # Data validation and settings
 pydantic[email]>=2.9.2,<2.12.0
 pydantic_settings>=2.5.2,<2.10.0
+jsonschema>=4.20.0,<5.0.0
 
 # Authentication and security
 passlib>=1.7.4,<1.8.0
