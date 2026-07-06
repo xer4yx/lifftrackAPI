@@ -22,11 +22,11 @@ firebase_admin>=6.6.0,<6.7.0
 git+https://github.com/ozgur/python-firebase.git#egg=python-firebase
 
 # Computer Vision and ML
-# Note: NumPy version constrained by TensorFlow 2.16.x compatibility (requires numpy<2.0.0)
+# Server-side pose (MoveNet/TensorFlow) was removed at the keypoints-in cutover
+# (ADR 0001/0002/0009). NumPy is kept for the scoring math and is no longer
+# pinned <2.0 by TensorFlow, but the pin is retained for reproducibility.
 numpy>=1.23.5,<2.0.0
 opencv-python>=4.9.0,<4.10.0.84
-tensorflow>=2.16.0,<2.17.0
-tensorflow_hub>=0.16.0,<0.17.0
 Pillow>=9.4.0,<11.0.0
 matplotlib>=3.8.0,<3.9.0
 
