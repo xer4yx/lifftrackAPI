@@ -52,14 +52,19 @@ def _elbow(side: str) -> AngleRange:
     )
 
 
-def _shoulder_press_elbow(side: str) -> AngleRange:
+def _overhead_press(side: str) -> AngleRange:
+    # Score the arm *elevation* (wrist-shoulder-hip), not the elbow flexion: a
+    # real press drives the arm overhead (~150-180 deg at lockout), while an
+    # arbitrary partial arm-raise stays near 90 deg. The old elbow band
+    # (30-100 deg) greened almost any bent arm, so form never discriminated
+    # (ADR 0013 anti-degeneracy).
     return AngleRange(
-        joint_angle=f"{side}_shoulder_{side}_elbow_{side}_wrist",
-        vertex=f"{side}_elbow",
-        lo=30.0,
-        hi=100.0,
-        tolerance=15.0,
-        cue="Keep your elbows in the proper press position.",
+        joint_angle=f"{side}_wrist_{side}_shoulder_{side}_hip",
+        vertex=f"{side}_shoulder",
+        lo=150.0,
+        hi=180.0,
+        tolerance=30.0,
+        cue="Press the weight fully overhead — arms straight above your shoulders.",
     )
 
 
@@ -113,7 +118,7 @@ EXERCISE_ANGLE_RANGES: Dict[str, List[AngleRange]] = {
         _neutral_head("left"),
         _neutral_head("right"),
     ],
-    "shoulder_press": [_shoulder_press_elbow("left"), _shoulder_press_elbow("right")],
+    "shoulder_press": [_overhead_press("left"), _overhead_press("right")],
 }
 
 # Name aliases so every exercise variant the pipeline recognizes resolves to the

@@ -183,3 +183,49 @@ class TestScoreForm:
         assert len(scores) > 1
         assert scores != {0.0}
         assert scores != {1.0}
+
+
+class TestShoulderPressDiscrimination:
+    """P3 / ADR 0013: a real overhead press must out-score an arm-raise instead
+    of everything reading ~100%. Driven through the real keypoint -> angle
+    pipeline so the table and PoseFeatureService agree on the angle key."""
+
+    @staticmethod
+    def _score(shoulders, hips, wrists):
+        # Synthetic COCO pose (normalized [0,1], y-down per ADR 0003) with just
+        # the keypoints the wrist-shoulder-hip angle needs.
+        (lsx, lsy), (rsx, rsy) = shoulders
+        (lhx, lhy), (rhx, rhy) = hips
+        (lwx, lwy), (rwx, rwy) = wrists
+        kps = {
+            "left_shoulder": Keypoint(x=lsx, y=lsy, confidence=1.0),
+            "right_shoulder": Keypoint(x=rsx, y=rsy, confidence=1.0),
+            "left_hip": Keypoint(x=lhx, y=lhy, confidence=1.0),
+            "right_hip": Keypoint(x=rhx, y=rhy, confidence=1.0),
+            "left_wrist": Keypoint(x=lwx, y=lwy, confidence=1.0),
+            "right_wrist": Keypoint(x=rwx, y=rwy, confidence=1.0),
+        }
+        angles = PoseFeatureService().extract_joint_angles(
+            KeypointCollection(keypoints=kps)
+        )
+        return score_form(angles, "shoulder_press")
+
+    _SHOULDERS = [(0.40, 0.40), (0.60, 0.40)]
+    _HIPS = [(0.42, 0.75), (0.58, 0.75)]
+    # Lockout: wrists straight above the shoulders.
+    _OVERHEAD = [(0.40, 0.10), (0.60, 0.10)]
+    # Lateral/front raise at shoulder height — arms out, not pressed up.
+    _ARM_RAISE = [(0.15, 0.40), (0.85, 0.40)]
+
+    def test_overhead_press_scores_full(self):
+        accuracy, suggestions = self._score(
+            self._SHOULDERS, self._HIPS, self._OVERHEAD
+        )
+        assert accuracy == pytest.approx(1.0)
+        assert suggestions == []
+
+    def test_arm_raise_scores_lower_with_a_cue(self):
+        good, _ = self._score(self._SHOULDERS, self._HIPS, self._OVERHEAD)
+        bad, cues = self._score(self._SHOULDERS, self._HIPS, self._ARM_RAISE)
+        assert bad < good
+        assert cues
