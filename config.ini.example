@@ -1,0 +1,26 @@
+# LiftTrack API — config.ini template
+#
+# Copy this file to `config.ini` in the repo root and fill in real values:
+#     cp config.ini.example config.ini
+#
+# `config.ini` is git-ignored (`*.ini`). The API reads it at import time
+# (lifttrack/__init__.py); every key below is read WITHOUT a fallback, so the
+# server raises on startup if any is missing. These are the minimum required to
+# boot the API for manual testing.
+
+[Authentication]
+# JWT signing secret. Generate a long random value, e.g.:
+#     python -c "import secrets; print(secrets.token_hex(32))"
+SECRET_KEY = replace-with-a-long-random-secret
+# JWT algorithm (HS256 is the default the app/API expect).
+ALGORITHM = HS256
+# Access-token lifetime, in minutes.
+TTL = 30
+
+[Firebase]
+# Realtime Database URL, e.g.
+#   https://<project-id>-default-rtdb.<region>.firebasedatabase.app
+FIREBASE_DEV_DB = https://your-project-default-rtdb.firebaseio.com
+# UID applied as the RTDB admin auth-variable override for server access
+# (matches a service-account/admin UID in your Firebase project).
+FIREBASE_AUTH_UID = your-service-account-uid
