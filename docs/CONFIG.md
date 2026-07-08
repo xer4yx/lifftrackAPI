@@ -43,15 +43,28 @@ at it. Keep it out of git.
 
 ## 4. Point the app at this API (manual keypoints-in test)
 
-The app reads the websocket base URL from a build-time define (`LiveConfig`,
-default `wss://proxmox.lift-track.com`). For a **local** dev API, build the
-debug APK against your PC's LAN IP over plain `ws://`:
+The app takes **two** build-time defines (both default to the production
+`proxmox.lift-track.com`): `API_BASE_URL` for HTTP (login/register/profile/
+progress) and `LIVE_WS_BASE_URL` for the live websocket. For a **local** dev API
+you must set **both** to your PC's LAN IP — over plain `http://`/`ws://` — or the
+app will authenticate against production and never reach your server.
+
+Serve on the LAN IP (not localhost) so the phone can reach it, then build:
 
 ```sh
-# in the app repo (Z:/liftttrack)
-flutter build apk --debug --dart-define=LIVE_WS_BASE_URL=ws://<PC-LAN-IP>:8000
+# API (repo root, venv) — host/port must match the app's defines
+.venv/Scripts/python.exe -m uvicorn main:app --host <PC-LAN-IP> --port <PORT>
+
+# App (Z:/liftttrack) — same host/port
+flutter build apk --debug \
+  --dart-define=API_BASE_URL=http://<PC-LAN-IP>:<PORT> \
+  --dart-define=LIVE_WS_BASE_URL=ws://<PC-LAN-IP>:<PORT>
 ```
 
-The client then connects to `ws://<PC-LAN-IP>:8000/v2/exercise-tracking?...`,
-streams `keypoints`, and consumes `bands`/`coaching`. Use the in-app floating
-**DEBUG** overlay to trace any runtime errors on the device.
+The client authenticates over HTTP, then connects to
+`ws://<PC-LAN-IP>:<PORT>/v2/exercise-tracking?...` (the `/v2` prefix is the
+**v3 keypoints-in** handler), streams `keypoints`, and consumes `bands`/
+`coaching`. The phone must be on the same Wi-Fi/LAN, and Windows Firewall must
+allow inbound on `<PORT>`. Use the in-app floating **DEBUG** overlay (with the
+`pipeline 2s: …` counters) to trace runtime issues on the device; press
+**Start** to begin streaming.
